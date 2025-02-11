@@ -7,10 +7,8 @@ import datetime
 from pathlib import Path
 
 
-#REX245 XRK WAE-WA-049-01, 10dpm, IS 0.25deg, H2, 1bar C17_H2_001_01_0001_0030-0C.xy
-                                              #gas, pressure, cycle_optional_gas_optional_measurements in current temp step_current temp step_measurements without interruption_temperatuure-0C
-
 class DataScreener:
+
     def __init__(self, directory):
         self.directory = directory
         self.df = None  # DataFrame to store categorized data
@@ -21,16 +19,17 @@ class DataScreener:
         self.df = self._create_dataframe(file_data)
         print("Files read and categorized successfully.")
 
-    def save_to_file(self, filename="categorized_data.pkl"):
+    def save_to_file(self, filename="categorized_data.csv"):
         """Saves the DataFrame to a file (Pickle or CSV)."""
+        file_save_path = os.path.join(self.directory, "..", filename)
         if self.df is None:
             print("No data to save. Run read_files() first.")
             return
 
         if filename.endswith(".pkl"):
-            self.df.to_pickle(filename)
+            self.df.to_pickle(file_save_path)
         elif filename.endswith(".csv"):
-            self.df.to_csv(filename, index=False)
+            self.df.to_csv(file_save_path, index=False)
         else:
             print("Unsupported file format. Use .pkl or .csv")
             return
@@ -53,26 +52,12 @@ class DataScreener:
 
         print(f"Data loaded from {filename}.")
 
-    def filter_by_category(self, category):
-        """Returns a DataFrame of files matching the given category in any column."""
-        if self.df is None:
-            print("No data available. Run read_files() or load_from_file() first.")
-            return None
-
-        filtered_df = self.df[self.df.apply(lambda row: category in row.values, axis=1)]
-
-        if filtered_df.empty:
-            print(f"No files found for category '{category}'.")
-            return None
-
-        return filtered_df
-
     def filter_by_categories(self, **criteria):
         """
         Filters the DataFrame based on specific category columns.
 
         Keyword arguments should be provided where the key is the column name
-        (e.g., 'Category_1', 'Category_2') and the value is the desired value for that column.
+        (e.g., gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature) and the value is the desired value for that column.
 
         For example:
             filter_by_categories(Category_1="catA", Category_2="catB")
@@ -110,16 +95,18 @@ class DataScreener:
                     filename, _ = os.path.splitext(file)  # Extract filename without extension
                     creation_time = file_path_for_stats.stat().st_ctime
                     creation_date = datetime.datetime.fromtimestamp(creation_time)
-                    print(creation_date)
-                    categories = self._extract_categories(filename, creation_date)
+
+                    categories = self._extract_categories(filename)
+
                     df_xy = self._read_xy_data(file_path)  # Read (X, Y) data
 
-                    file_data.append([file, *categories, df_xy])  # Store DataFrame in last column
+                    file_data.append([file, *categories, creation_date, df_xy])  # Store DataFrame in last column
 
         return file_data
 
-    def _extract_categories(self, filename, creation_date):
-        """Extracts categories from a filename (comma-separated)."""
+    def _extract_categories(self, filename):
+        """Extracts categories from a filename.
+        :returns gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature """
         pattern = (
                     r"(?:(?P<gas>[A-Z](?:[a-z])?\d*)\s*,\s+)?"  # Optional initial gas
                     r"(?P<pressure>\d+(?:\.\d+)?)bar"             # Pressure
@@ -132,26 +119,23 @@ class DataScreener:
                     r"(?P<temperature>\d+)-0C$"                   # temperature then literal -0C at the end
                 )
 
-
-
-        print(filename)
         match = re.search(pattern, filename)
         if match:
             data = match.groupdict()
-            print("Gas:", data.get("gas"))
-            print("Pressure:", data.get("pressure"))
-            print("Cycle:", data.get("cycle"))
-            print("Measurements in current temp step:", data.get("numMes"))
-            #print("Current temp step:", data.get("currentStep"))
-            #print("Measurements without interruption:", data.get("noIntMes"))
-            #print("Temperature:", data.get("temperature"))
+
+            gas = data.get("gas") if data.get("gas") else None
+            pressure = float(data.get("pressure")) if data.get("pressure") else None
+            cycle = int(data.get("cycle")) if data.get("cycle") else None
+            measurements_current_step = int(data.get("numMes")) if data.get("numMes") else None
+            current_temp_step = int(data.get("currentStep")) if data.get("currentStep") else None
+            measurements_no_interrupt = int(data.get("noIntMes")) if data.get("noIntMes") else None
+            temperature = float(data.get("temperature")) if data.get("temperature") else None
+
+            return gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature
+
         else:
             print("The filename did not match the expected format.")
-
-
-
-        categories = [cat.strip() for cat in filename.split(",")]
-        return categories
+            return None, None, None, None, None, None, None
 
     def _read_xy_data(self, file_path):
         """Reads the (X, Y) data from a CSV file, if valid."""
@@ -169,21 +153,23 @@ class DataScreener:
 
     def _create_dataframe(self, file_data):
         """Creates a Pandas DataFrame from the collected file data."""
-        max_categories = max(len(row) - 2 for row in file_data)
-        column_names = ["Filename"] + [f"Category_{i+1}" for i in range(max_categories)] + ["XY_Data"]
-        return pd.DataFrame(file_data, columns=column_names)
+        category_names = [
+                                "gas", "pressure", "cycle",
+                                "measurements_current_step", "current_temp_step",
+                                "measurements_no_interrupt", "temperature"
+                         ]
+        column_names = ["filename"] + category_names + ["creation_date"] + ["df_xy"]
+        df = pd.DataFrame(file_data, columns=column_names)
+        df.sort_values(by=['creation_date'], inplace=True)
+        return df
 
 
+if __name__ == "__main__":
 
-
-
-
-
-data_manager = DataScreener(r"W:\Workgroup Felderhoff\Kiki\Wärmeleitfähigkeit\WAE-WA-030-Mg2NiH4\WAE-WA-031\WAE-WA-031-XRD\In-Situ-2\REX245 XRK WAE-WA-031")
-data_manager.read_files()  # Build the DataFrame
-#filtered = data_manager.filter_by_categories(Category_1="catA", Category_2="catB")
-print("asdfasdf")
-print(data_manager.df)
+    data_manager = DataScreener(r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\REX245 XRK WAE-WA-049")
+    data_manager.read_files()  # Build the DataFrame
+    filtered=data_manager.filter_by_categories(pressure=10)
+    print(filtered["pressure"])
 
 
 
