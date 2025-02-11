@@ -65,7 +65,7 @@ if __name__ == '__main__':
         r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\categorized_data.pkl"
     )
     # Filter for a specific temperature and cycle range.
-    df = data_manager.filter_by_categories(temperature=350, cycle=[5, 6])
+    df = data_manager.filter_by_categories(temperature=350, cycle=[5, 10], )
 
     # Create the Qt application.
     app = QtWidgets.QApplication([])

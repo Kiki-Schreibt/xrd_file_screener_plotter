@@ -65,6 +65,7 @@ class DataScreener:
         For example:
             filter_by_categories(pressure=10)        # Exact match: pressure == 10
             filter_by_categories(pressure=(5, 10))     # Range: 5 < pressure < 10
+            available categories: gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature
         """
         if self.df is None:
             print("No data available. Run read_files() or load_from_file() first.")
