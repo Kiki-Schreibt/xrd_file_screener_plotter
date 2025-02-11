@@ -1,81 +1,78 @@
-import sys
 import pandas as pd
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets
 
 from xrd_file_screener import DataScreener
 
-class StackedPlotter:
 
+class StackedPlotWidget(pg.GraphicsLayoutWidget):
+    """
+    A widget that displays a stacked plot of XY data from a given DataFrame.
 
-    def __init__(self, data_frame, vertical_offset=10):
+    The DataFrame is expected to have at least these columns:
+      - 'filename': a label for the curve
+      - 'df_xy': a DataFrame with columns "X" and "Y" containing the data
+    """
+    def __init__(self, data_frame, vertical_offset=10, parent=None):
         """
-        :param data_frame: A pandas DataFrame with at least the following columns:
-                           - 'filename': a string (for labeling)
-                           - 'df_xy': a DataFrame holding the measurement data with columns "X" and "Y"
-        :param vertical_offset: The amount of vertical shift to apply between consecutive curves.
+        :param data_frame: Pandas DataFrame containing the XY data.
+        :param vertical_offset: The vertical offset applied between curves.
+        :param parent: Optional parent widget.
         """
-        self.df = data_frame
+        super().__init__(parent)
+        self.data_frame = data_frame
         self.vertical_offset = vertical_offset
 
-    def plot_stacked(self):
-        """
-        Creates a pyqtgraph window and plots each (X, Y) curve from the DataFrame,
-        applying a vertical offset to each subsequent curve.
-        """
-        # Create the Qt application
-        app = QtWidgets.QApplication(sys.argv)
+        self._init_ui()
+        self._plot_stacked()
 
-        # Create a GraphicsLayoutWidget (a convenient container for plots)
-        win = pg.GraphicsLayoutWidget(title="Stacked Plot of XY Data")
-        win.resize(800, 600)
-        win.setWindowTitle('Stacked XY Data')
+    def _init_ui(self):
+        """Set up the UI (plot area) of the widget."""
+        self.setWindowTitle('Stacked XY Data')
+        self.resize(800, 600)
+        self.plot_item = self.addPlot(title="Stacked XY Data")
+        self.plot_item.setLabel('left', 'Y (offset applied)')
+        self.plot_item.setLabel('bottom', 'X')
 
-        # Add a PlotItem to the layout
-        plot_item = win.addPlot(title="Stacked XY Data")
-        plot_item.setLabel('left', 'Y (offset applied)')
-        plot_item.setLabel('bottom', 'X')
-
-        # Determine the number of curves to help set up a color cycle
-        num_curves = len(self.df)
-
-        # Loop over the rows of the DataFrame and plot each curve
-        for idx, row in self.df.iterrows():
-            # Extract the XY data (ensure it's not None and not empty)
+    def _plot_stacked(self):
+        """Plot each XY dataset as a stacked curve in the plot_item."""
+        num_curves = len(self.data_frame)
+        for idx, row in self.data_frame.iterrows():
             xy_df = row.get('df_xy')
             if xy_df is None or xy_df.empty:
-                continue  # Skip if no valid data
+                continue
 
-            # Get X and Y values and apply a vertical offset (based on the index)
             x = xy_df['X'].values
             y = xy_df['Y'].values + idx * self.vertical_offset
 
-            # Create a pen with a unique color for each curve (using pyqtgraph's built-in color helper)
             pen = pg.mkPen(color=pg.intColor(idx, hues=num_curves), width=2)
+            self.plot_item.plot(x, y, pen=pen, name=[row.get('filename', f'Curve {idx}'), row.get('creation_date')])
+            self.plot_item.addLegend(offset=(0, 1))
 
-            # Plot the curve; you can also add a name for a legend if needed
-            plot_item.plot(x, y, pen=pen, name=row.get('filename', f'Curve {idx}'))
 
-        # Show the window and start the Qt event loop.
-        win.show()
-        sys.exit(app.exec())
 
 
 
 # ------------------------------
-# Example usage of StackedPlotter
+# Example usage of StackedPlotWidget
 # ------------------------------
 if __name__ == '__main__':
-    # For demonstration, let's create a dummy filtered DataFrame similar to what your DataScreener produces.
-    # In your actual usage, you would obtain 'filtered_df' from:
-    #    filtered_df = data_manager.filter_by_categories(pressure=10)
+    # Create a DataScreener instance and load/filter the data.
+    data_manager = DataScreener(
+        r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\REX245 XRK WAE-WA-049"
+    )
+    data_manager.load_from_file(
+        r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\categorized_data.pkl"
+    )
+    # Filter for a specific temperature and cycle range.
+    df = data_manager.filter_by_categories(temperature=350, cycle=[5, 6])
 
-    # Create dummy data (5 curves) with a "df_xy" column containing a DataFrame with X and Y data.
-    dummy_data = []
-    data_manager = DataScreener(r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\REX245 XRK WAE-WA-049")
-    data_manager.load_from_file(r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\categorized_data.pkl")
-    #df = data_manager.df
-    df = data_manager.filter_by_categories(temperature=350)
+    # Create the Qt application.
+    app = QtWidgets.QApplication([])
 
-    plotter = StackedPlotter(df, vertical_offset=500)
-    plotter.plot_stacked()
+    # Create and show the stacked plot widget.
+    widget = StackedPlotWidget(df, vertical_offset=500)
+    widget.show()
+
+    # Start the Qt event loop.
+    app.exec()

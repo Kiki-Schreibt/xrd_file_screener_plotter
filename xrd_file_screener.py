@@ -19,7 +19,7 @@ class DataScreener:
         self.df = self._create_dataframe(file_data)
         print("Files read and categorized successfully.")
 
-    def save_to_file(self, filename="categorized_data.csv"):
+    def save_to_file(self, filename="categorized_data.pkl"):
         """Saves the DataFrame to a file (Pickle or CSV)."""
         file_save_path = os.path.join(self.directory, "..", filename)
         if self.df is None:
@@ -57,20 +57,29 @@ class DataScreener:
         Filters the DataFrame based on specific category columns.
 
         Keyword arguments should be provided where the key is the column name
-        (e.g., gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature) and the value is the desired value for that column.
+        and the value is either:
+          - A single value to match exactly, or
+          - A tuple or list of two values (min, max) to filter for rows where:
+                min < column_value < max
 
         For example:
-            filter_by_categories(Category_1="catA", Category_2="catB")
-        will return all rows where Category_1 equals "catA" and Category_2 equals "catB".
+            filter_by_categories(pressure=10)        # Exact match: pressure == 10
+            filter_by_categories(pressure=(5, 10))     # Range: 5 < pressure < 10
         """
         if self.df is None:
             print("No data available. Run read_files() or load_from_file() first.")
             return None
 
-        filtered_df = self.df
-        for col, val in criteria.items():
+        filtered_df = self.df.copy()  # Work on a copy if needed
+
+        for col, crit_val in criteria.items():
             if col in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df[col] == val]
+                # Check if crit_val is a tuple or list with exactly two elements.
+                if isinstance(crit_val, (tuple, list)) and len(crit_val) == 2:
+                    min_val, max_val = crit_val
+                    filtered_df = filtered_df[(filtered_df[col] >= min_val) & (filtered_df[col] <= max_val)]
+                else:
+                    filtered_df = filtered_df[filtered_df[col] == crit_val]
             else:
                 print(f"Column {col} not found in the DataFrame.")
                 return None
@@ -80,7 +89,6 @@ class DataScreener:
             return None
 
         return filtered_df
-
     ### --- HELPER METHODS --- ###
 
     def _get_files_from_directory(self):
@@ -93,7 +101,7 @@ class DataScreener:
                     file_path = os.path.join(root, file)
                     file_path_for_stats = Path(str(file_path))
                     filename, _ = os.path.splitext(file)  # Extract filename without extension
-                    creation_time = file_path_for_stats.stat().st_ctime
+                    creation_time = file_path_for_stats.stat().st_mtime
                     creation_date = datetime.datetime.fromtimestamp(creation_time)
 
                     categories = self._extract_categories(filename)
@@ -168,8 +176,9 @@ if __name__ == "__main__":
 
     data_manager = DataScreener(r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\REX245 XRK WAE-WA-049")
     data_manager.read_files()  # Build the DataFrame
-    filtered=data_manager.filter_by_categories(pressure=10)
-    print(filtered["pressure"])
+    data_manager.save_to_file()
+
+    print(data_manager.df["creation_date"])
 
 
 
