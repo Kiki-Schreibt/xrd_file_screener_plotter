@@ -75,7 +75,7 @@ if __name__ == '__main__':
     data_manager = DataScreener(r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\REX245 XRK WAE-WA-049")
     data_manager.load_from_file(r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\categorized_data.pkl")
     #df = data_manager.df
-    df = data_manager.filter_by_categories()
+    df = data_manager.filter_by_categories(temperature=350)
 
     plotter = StackedPlotter(df, vertical_offset=500)
     plotter.plot_stacked()
