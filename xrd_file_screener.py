@@ -1,5 +1,14 @@
 import os
+import re
 import pandas as pd
+import datetime
+
+
+from pathlib import Path
+
+
+#REX245 XRK WAE-WA-049-01, 10dpm, IS 0.25deg, H2, 1bar C17_H2_001_01_0001_0030-0C.xy
+                                              #gas, pressure, cycle_optional_gas_optional_measurements in current temp step_current temp step_measurements without interruption_temperatuure-0C
 
 class DataScreener:
     def __init__(self, directory):
@@ -95,30 +104,67 @@ class DataScreener:
 
         for root, _, files in os.walk(self.directory):
             for file in files:
-                file_path = os.path.join(root, file)
-                filename, _ = os.path.splitext(file)  # Extract filename without extension
-                categories = self._extract_categories(filename)
-                df_xy = self._read_xy_data(file_path)  # Read (X, Y) data
+                if file.endswith(".xy"):
+                    file_path = os.path.join(root, file)
+                    file_path_for_stats = Path(str(file_path))
+                    filename, _ = os.path.splitext(file)  # Extract filename without extension
+                    creation_time = file_path_for_stats.stat().st_ctime
+                    creation_date = datetime.datetime.fromtimestamp(creation_time)
+                    print(creation_date)
+                    categories = self._extract_categories(filename, creation_date)
+                    df_xy = self._read_xy_data(file_path)  # Read (X, Y) data
 
-                file_data.append([file, *categories, df_xy])  # Store DataFrame in last column
+                    file_data.append([file, *categories, df_xy])  # Store DataFrame in last column
 
         return file_data
 
-    def _extract_categories(self, filename):
+    def _extract_categories(self, filename, creation_date):
         """Extracts categories from a filename (comma-separated)."""
+        pattern = (
+                    r"(?:(?P<gas>[A-Z](?:[a-z])?\d*)\s*,\s+)?"  # Optional initial gas
+                    r"(?P<pressure>\d+(?:\.\d+)?)bar"             # Pressure
+                    r"(?:\s+C(?P<cycle>\d+))?"                    # Optional cycle
+                    r"(?:\s*_(?P<gas2>[A-Z](?:[a-z])?\d*))?"       # Optional extra gas field between cycle and numeric block
+                    r"\s*_"                                      # The underscore before numMes
+                    r"(?P<numMes>\d+)_"                          # numMes digits
+                    r"(?P<currentStep>\d+)_"                     # currentStep digits
+                    r"(?P<noIntMes>\d+)_"                        # noIntMes digits
+                    r"(?P<temperature>\d+)-0C$"                   # temperature then literal -0C at the end
+                )
+
+
+
+        print(filename)
+        match = re.search(pattern, filename)
+        if match:
+            data = match.groupdict()
+            print("Gas:", data.get("gas"))
+            print("Pressure:", data.get("pressure"))
+            print("Cycle:", data.get("cycle"))
+            print("Measurements in current temp step:", data.get("numMes"))
+            #print("Current temp step:", data.get("currentStep"))
+            #print("Measurements without interruption:", data.get("noIntMes"))
+            #print("Temperature:", data.get("temperature"))
+        else:
+            print("The filename did not match the expected format.")
+
+
+
         categories = [cat.strip() for cat in filename.split(",")]
         return categories
 
     def _read_xy_data(self, file_path):
         """Reads the (X, Y) data from a CSV file, if valid."""
         try:
-            df_xy = pd.read_csv(file_path)  # Adjust if your files are not CSV
+            df_xy = pd.read_csv(file_path, sep=r"\s+", header=None)  # Adjust if your files are not CSV
+
             if len(df_xy.columns) >= 2:  # Ensure at least two columns
                 df_xy = df_xy.iloc[:, :2]  # Take only first two columns (assumed X and Y)
                 df_xy.columns = ["X", "Y"]  # Standardize column names
                 return df_xy
-        except Exception:
-            pass  # Ignore errors for non-CSV or unreadable files
+        except Exception as e:
+            print(e)
+            #pass  # Ignore errors for non-CSV or unreadable files
         return None  # Return None if file is invalid
 
     def _create_dataframe(self, file_data):
@@ -133,7 +179,15 @@ class DataScreener:
 
 
 
-data_manager = DataScreener("your/folder/path")
+data_manager = DataScreener(r"W:\Workgroup Felderhoff\Kiki\Wärmeleitfähigkeit\WAE-WA-030-Mg2NiH4\WAE-WA-031\WAE-WA-031-XRD\In-Situ-2\REX245 XRK WAE-WA-031")
 data_manager.read_files()  # Build the DataFrame
-filtered = data_manager.filter_by_categories(Category_1="catA", Category_2="catB")
-print(filtered)
+#filtered = data_manager.filter_by_categories(Category_1="catA", Category_2="catB")
+print("asdfasdf")
+print(data_manager.df)
+
+
+
+"REX245 XRK WAE-WA-049-01, 10dpm, IS 0.25deg, H2, 5bar C11_001_04_0004_0290-0C"
+
+"REX245 XRK WAE-WA-049-01, 10dpm, IS 0.25deg, H2, 5bar C2_001_01_0001_0289-0C"
+
