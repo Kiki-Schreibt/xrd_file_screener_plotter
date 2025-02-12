@@ -2,7 +2,7 @@ import os
 import re
 import pandas as pd
 import datetime
-from rasx_reader import RasxDataManager
+from rasx_manager import RasxDataManager
 
 
 from pathlib import Path
@@ -53,7 +53,7 @@ class DataScreener:
 
         print(f"Data loaded from {filename}.")
 
-    def filter_by_categories(self, group_by=None, max_by=None, **criteria):
+    def filter_by_categories(self, group_by=None, agg_by=None, **criteria):
         """
         Filters the DataFrame based on specific category columns.
 
@@ -65,13 +65,14 @@ class DataScreener:
 
         Optionally, you can specify:
           - group_by: a column name to group by (e.g., crit_A)
-          - max_by: a column name from which, within each group, the row with the
-                    maximum value is selected (e.g., crit_B)
+          - agg_by: a tuple (column_name, "max") or (column_name, "min")
+            which selects, within each group, the row with the maximum or minimum value of that column.
+
 
         For example:
             filter_by_categories(pressure=10)
             filter_by_categories(pressure=(5, 10))
-            filter_by_categories(gas='Air', group_by='cycle', max_by='pressure')
+            filter_by_categories(gas='Air', group_by='cycle', agg_by=('pressure', 'max')
             available categories: gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature
         """
         if self.df is None:
@@ -97,15 +98,21 @@ class DataScreener:
             print("No matching rows found.")
             return None
 
-        # If both group_by and max_by are provided, group the filtered DataFrame
-        # and select the row in each group with the maximum value in max_by.
-        if group_by is not None and max_by is not None:
-            if group_by in filtered_df.columns and max_by in filtered_df.columns:
-                # For each group defined by group_by, find the index of the row where max_by is maximum.
-                idx = filtered_df.groupby(group_by)[max_by].idxmax()
+        # If both group_by and agg_by are provided, group the filtered DataFrame
+        # and select the row in each group with the maximum value in agg_by.
+        if group_by is not None and agg_by is not None:
+            col_name, agg_type = agg_by
+            if group_by in filtered_df.columns and col_name in filtered_df.columns:
+                if agg_type.lower() == "max":
+                    idx = filtered_df.groupby(group_by)[col_name].idxmax()
+                elif agg_type.lower() == "min":
+                    idx = filtered_df.groupby(group_by)[col_name].idxmin()
+                else:
+                    print("agg_by must be a tuple (column_name, 'max' or 'min')")
+                    return None
                 filtered_df = filtered_df.loc[idx]
             else:
-                print("Group or max column not found in the DataFrame.")
+                print("Group or aggregation column not found in the DataFrame.")
                 return None
         filtered_df = filtered_df.reset_index(drop=True)
         return filtered_df

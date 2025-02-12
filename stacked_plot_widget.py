@@ -54,6 +54,9 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
 
             self.plot_item.plot(x, y, pen=pen, name=[label])
             self.plot_item.addLegend(offset=(0, 1))
+            self._add_text_item_to_line(x, y, label, pen)
+
+
 
     def add_vertical_lines(self, df_lines):
         """
@@ -147,6 +150,25 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             label = " ".join(labels)
         return label
 
+    def _add_text_item_to_line(self, x, y, label, pen):
+        #todo: customize text to show next to line
+        x_pos = x[-1]
+        y_pos = y[-1]
+
+        # Create a text item for the label.
+        # The 'anchor' parameter ensures the text is positioned relative to its bounding box.
+        text_item = pg.TextItem(text=label, anchor=(0, 1), color=pen.color())
+        # Offset the text slightly from the curve point (adjust offsets as needed).
+        offset_x = x.max() * 0.02
+        offset_y = 0
+        text_item.setPos(x_pos + offset_x, y_pos + offset_y)
+        self.plot_item.addItem(text_item)
+
+        # Option 1: Draw a line connecting the curve to the text.
+        # You can use plot_item.plot to draw a connecting line.
+        self.plot_item.plot([x_pos, x_pos + offset_x], [y_pos, y_pos + offset_y],
+                            pen=pg.mkPen(color=pen.color(), style=pg.QtCore.Qt.DashLine))
+
 # ------------------------------
 # Example usage of StackedPlotWidget
 # ------------------------------
@@ -165,8 +187,8 @@ if __name__ == '__main__':
     temperature = [285, 300]
     pressure = [9.5, 10.5]
     group_by = 'cycle'
-    max_val = "current_temp_step"
-    df = data_manager.filter_by_categories(cycle=cycle_number, temperature=temperature, group_by=group_by, max_by=max_val)
+    agg_by = ("current_temp_step", "max")
+    df = data_manager.filter_by_categories(cycle=cycle_number, temperature=temperature, group_by=group_by, agg_by=agg_by)
     #df = data_manager.df
     # Create the Qt application.
     app = QtWidgets.QApplication([])

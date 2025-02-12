@@ -142,7 +142,7 @@ class RasxDataManager:
 
     # Add more methods to organize or process your data as needed.
 
-# main.py (example usage)
+# main_backend.py (example usage)
 if __name__ == '__main__':
     file_path = r'C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\REX245 XRK WAE-WA-049\REX245 XRK WAE-WA-049-01, 10dpm, IS 0.25deg, H2, 10bar C17 after 2.5h_001_17_0001_0350-0C.rasx'
     manager = RasxDataManager(file_path=file_path)

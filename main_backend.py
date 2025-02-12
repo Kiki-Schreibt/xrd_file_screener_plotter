@@ -10,7 +10,7 @@ from stacked_plot_widget import StackedPlotWidget  # The widget for plotting
 
 class XRDFileScreenerController:
     def __init__(self, folder_path=None, pkl_path=None, filters=None, vertical_offset=500,
-                 group_by=None, max_val=None):
+                 group_by=None, agg_by=()):
         """
         :param folder_path: Path to the directory containing .rasx files.
                             Required if a pkl file is not provided.
@@ -20,14 +20,14 @@ class XRDFileScreenerController:
                         {"cycle": [1, 20], "temperature": [285, 300], "pressure": [9.5, 10.5]}
         :param vertical_offset: Vertical offset applied between curves in the stacked plot.
         :param group_by: Column name to group the filtered data (for example, "cycle").
-        :param max_val: Column name from which to select the row with the maximum value within each group.
+        :param agg_by: tuple (col_name, max/min) from which to select the row with the maximum/minimum value within each group.
         """
         self.folder_path = folder_path
         self.pkl_path = pkl_path
         self.filters = filters or {}
         self.vertical_offset = vertical_offset
         self.group_by = group_by
-        self.max_val = max_val
+        self.agg_by = agg_by
         self.data_screener = DataScreener(self.folder_path) if folder_path else None
 
     def run(self):
@@ -57,10 +57,10 @@ class XRDFileScreenerController:
         # Apply filters if provided.
         if self.filters:
             print("Applying filters...")
-            # Pass the additional group_by and max_val parameters if they are provided.
-            if self.group_by and self.max_val:
+            # Pass the additional group_by and agg_by parameters if they are provided.
+            if self.group_by and self.agg_by:
                 df_filtered = self.data_screener.filter_by_categories(group_by=self.group_by,
-                                                                      max_by=self.max_val,
+                                                                      agg_by=self.agg_by,
                                                                       **self.filters)
             else:
                 df_filtered = self.data_screener.filter_by_categories(**self.filters)
@@ -74,6 +74,10 @@ class XRDFileScreenerController:
         app = QtWidgets.QApplication(sys.argv)
         print("Plotting data")
         widget = StackedPlotWidget(df_filtered, vertical_offset=self.vertical_offset)
+        line = {"A": [20, 30, 40],
+            "B": [15, 35, 45]}
+        line = pd.DataFrame(line)
+        widget.add_vertical_lines(df_lines=line)
         widget.show()
         sys.exit(app.exec())
 
@@ -87,21 +91,28 @@ if __name__ == '__main__':
     # Optionally, specify the path to a pre-saved pickle file.
     pkl_path = r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\categorized_data.pkl"
 
-    # Example filters for categories (adjust keys to match your DataFrame columns)
-    filters = {
-        "cycle": [1, 20],
-        "temperature": [285, 300],
+    category_names = [
+                                "gas", "pressure", "cycle",
+                                "measurements_current_step", "current_temp_step",
+                                "measurements_no_interrupt", "temperature"
+                         ]
+    filters = { "temperature": [0,500],
+                "cycle": [0, 30]
 
-    }
+
+
+                }
 
     # Group by the "cycle" column and select, within each group, the row with maximum "current_temp_step"
     group_by = 'cycle'
-    max_val = "current_temp_step"
+    agg_by = ("current_temp_step", 'min')
 
     controller = XRDFileScreenerController(folder_path=folder_path,
                                              pkl_path=pkl_path,
                                              filters=filters,
                                              vertical_offset=500,
                                              group_by=group_by,
-                                             max_val=max_val)
+                                             agg_by=agg_by
+                                            )
     controller.run()
+#todo: legende an linien heften
