@@ -7,6 +7,7 @@ from datetime import datetime
 # Import your custom classes.
 from xrd_file_screener import DataScreener  # Class that reads raw .rasx files and builds a DataFrame
 from stacked_plot_widget import StackedPlotWidget  # The widget for plotting
+from pks_manager import PTHParser
 
 class XRDFileScreenerController:
     def __init__(self, folder_path=None, pkl_path=None, filters=None, vertical_offset=500,
@@ -74,6 +75,13 @@ class XRDFileScreenerController:
         app = QtWidgets.QApplication(sys.argv)
         print("Plotting data")
         widget = StackedPlotWidget(df_filtered, vertical_offset=self.vertical_offset)
+        folder_path = r'C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\pks_files'
+        file_path = os.path.join(folder_path, 'Mg_642654_Cu_borad.PTH')
+        parser = PTHParser(file_path=file_path)
+        #pks = parser.parse_file(file_path=file_path)
+
+        #line={"A", pks.df_xy['x'].to_numpy()}
+
         line = {"A": [20, 30, 40],
             "B": [15, 35, 45]}
         line = pd.DataFrame(line)
@@ -96,11 +104,9 @@ if __name__ == '__main__':
                                 "measurements_current_step", "current_temp_step",
                                 "measurements_no_interrupt", "temperature"
                          ]
-    filters = { "temperature": [0,500],
-                "cycle": [0, 30]
-
-
-
+    filters = { "temperature": [0, 500],
+                "cycle": 5,
+                "pressure": [8, 11]
                 }
 
     # Group by the "cycle" column and select, within each group, the row with maximum "current_temp_step"
