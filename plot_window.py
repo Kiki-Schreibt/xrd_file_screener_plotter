@@ -47,11 +47,53 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             y = xy_df['Y'].values + idx * self.vertical_offset
 
             pen = pg.mkPen(color=pg.intColor(idx, hues=num_curves), width=2)
-            self.plot_item.plot(x, y, pen=pen, name=[row.get('filename', f'Curve {idx}'), row.get('creation_date')])
+            self.plot_item.plot(x, y, pen=pen, name=[row.get('filename', f'Curve {idx}'), str(row.get('creation_date'))])
             self.plot_item.addLegend(offset=(0, 1))
-        print("haaha")
 
-    def add_vertical_lines(self, lines_by_legend):
+    def add_vertical_lines(self, df_lines):
+        """
+        Add vertical lines to the plot with an extra legend using a DataFrame.
+
+        In the provided DataFrame, each column name is treated as a legend label,
+        and the column's values are the x positions at which vertical lines are drawn.
+        For example, if the DataFrame is:
+
+             Event A    Event B
+        0       1         5
+        1       2         6
+        2       3         7
+        3       4         8
+        4       5       NaN
+
+        then vertical lines will be drawn at x=1,2,3,4,5 for "Event A" and
+        at x=5,6,7,8 for "Event B". Each group of lines will have its own color.
+
+        :param df_lines: DataFrame where each column represents a legend label and
+                         contains x positions for vertical lines.
+        """
+        # Create a new legend for the vertical lines and add it to the plot.
+        vertical_legend = pg.LegendItem(offset=(50, 50))
+        vertical_legend.setParentItem(self.plot_item.graphicsItem())
+
+        num_groups = len(df_lines.columns)
+        for idx, legend_label in enumerate(df_lines.columns):
+            # Choose a color for this group.
+            color = pg.intColor(idx, hues=num_groups)
+            # Use a dashed line style.
+            pen = pg.mkPen(color=color, style=QtCore.Qt.DashLine, width=2)
+            # Get the x positions for this legend label and drop NaN values.
+            x_positions = df_lines[legend_label].dropna().tolist()
+
+            # Draw a vertical line (angle=90) for each x position.
+            for x in x_positions:
+                line = pg.InfiniteLine(pos=x, angle=90, pen=pen)
+                self.plot_item.addItem(line)
+
+            # Create a dummy plot item to add to the legend.
+            dummy_item = pg.PlotDataItem([0], [0], pen=pen)
+            vertical_legend.addItem(dummy_item, legend_label)
+
+    def add_vertical_lines_from_struct(self, lines_by_legend):
         """
         Add vertical lines to the plot with an extra legend.
 
@@ -81,6 +123,7 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             dummy_item = pg.PlotDataItem([0], [0], pen=pen)
             vertical_legend.addItem(dummy_item, legend_label)
 
+
     def _normalize_series(self, series):
         normed_series = (series - series.min()) / (series.max() - series.min())
         return normed_series
@@ -99,13 +142,13 @@ if __name__ == '__main__':
 
     # Filter for a specific temperature and cycle range.
 
-    cycle_number = [1,20]
-    temperature = [345, 355]
+    cycle_number = [1, 20]
+    temperature = [285, 300]
     pressure = [9.5, 10.5]
     group_by = 'cycle'
     max_val = "current_temp_step"
     df = data_manager.filter_by_categories(cycle=cycle_number, temperature=temperature, group_by=group_by, max_by=max_val)
-
+    #df = data_manager.df
     # Create the Qt application.
     app = QtWidgets.QApplication([])
 
@@ -113,7 +156,8 @@ if __name__ == '__main__':
     widget = StackedPlotWidget(df, vertical_offset=500)
     line = {"A": [20, 30, 40],
             "B": [15, 35, 45]}
-    widget.add_vertical_lines(lines_by_legend=line)
+    line = pd.DataFrame(line)
+    widget.add_vertical_lines(df_lines=line)
     widget.show()
 
     # Start the Qt event loop.

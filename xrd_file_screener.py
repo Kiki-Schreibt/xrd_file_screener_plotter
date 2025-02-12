@@ -2,6 +2,7 @@ import os
 import re
 import pandas as pd
 import datetime
+from rasx_reader import RasxDataManager
 
 
 from pathlib import Path
@@ -121,8 +122,14 @@ class DataScreener:
                     file_path = os.path.join(root, file)
                     file_path_for_stats = Path(str(file_path))
                     filename, _ = os.path.splitext(file)  # Extract filename without extension
-                    creation_time = file_path_for_stats.stat().st_mtime
-                    creation_date = datetime.datetime.fromtimestamp(creation_time)
+
+                    try:
+                        creation_date = self._get_meas_time_from_rasx(root=root, filename=filename)
+                       # print("ok")
+                    except:
+                        creation_time = file_path_for_stats.stat().st_mtime
+                        creation_date = datetime.datetime.fromtimestamp(creation_time)
+                        print("not ok")
 
                     categories = self._extract_categories(filename)
 
@@ -190,6 +197,12 @@ class DataScreener:
         df = pd.DataFrame(file_data, columns=column_names)
         df.sort_values(by=['cycle', 'creation_date'], inplace=True)
         return df
+
+    def _get_meas_time_from_rasx(self, root, filename):
+
+        rasx_file_path = os.path.join(root, filename+'.rasx')
+        rasx_manager = RasxDataManager(file_path=rasx_file_path)
+        return rasx_manager.start_time
 
 
 if __name__ == "__main__":
