@@ -52,7 +52,7 @@ class DataScreener:
 
         print(f"Data loaded from {filename}.")
 
-    def filter_by_categories(self, **criteria):
+    def filter_by_categories(self, group_by=None, max_by=None, **criteria):
         """
         Filters the DataFrame based on specific category columns.
 
@@ -60,11 +60,17 @@ class DataScreener:
         and the value is either:
           - A single value to match exactly, or
           - A tuple or list of two values (min, max) to filter for rows where:
-                min < column_value < max
+                min <= column_value <= max
+
+        Optionally, you can specify:
+          - group_by: a column name to group by (e.g., crit_A)
+          - max_by: a column name from which, within each group, the row with the
+                    maximum value is selected (e.g., crit_B)
 
         For example:
-            filter_by_categories(pressure=10)        # Exact match: pressure == 10
-            filter_by_categories(pressure=(5, 10))     # Range: 5 < pressure < 10
+            filter_by_categories(pressure=10)
+            filter_by_categories(pressure=(5, 10))
+            filter_by_categories(gas='Air', group_by='cycle', max_by='pressure')
             available categories: gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature
         """
         if self.df is None:
@@ -73,6 +79,7 @@ class DataScreener:
 
         filtered_df = self.df.copy()  # Work on a copy if needed
 
+        # Apply the filtering criteria.
         for col, crit_val in criteria.items():
             if col in filtered_df.columns:
                 # Check if crit_val is a tuple or list with exactly two elements.
@@ -89,7 +96,19 @@ class DataScreener:
             print("No matching rows found.")
             return None
 
+        # If both group_by and max_by are provided, group the filtered DataFrame
+        # and select the row in each group with the maximum value in max_by.
+        if group_by is not None and max_by is not None:
+            if group_by in filtered_df.columns and max_by in filtered_df.columns:
+                # For each group defined by group_by, find the index of the row where max_by is maximum.
+                idx = filtered_df.groupby(group_by)[max_by].idxmax()
+                filtered_df = filtered_df.loc[idx]
+            else:
+                print("Group or max column not found in the DataFrame.")
+                return None
+        filtered_df = filtered_df.reset_index(drop=True)
         return filtered_df
+
     ### --- HELPER METHODS --- ###
 
     def _get_files_from_directory(self):
@@ -134,7 +153,7 @@ class DataScreener:
 
             gas = data.get("gas") if data.get("gas") else None
             pressure = float(data.get("pressure")) if data.get("pressure") else None
-            cycle = int(data.get("cycle")) if data.get("cycle") else None
+            cycle = int(data.get("cycle")) if data.get("cycle") else 1
             measurements_current_step = int(data.get("numMes")) if data.get("numMes") else None
             current_temp_step = int(data.get("currentStep")) if data.get("currentStep") else None
             measurements_no_interrupt = int(data.get("noIntMes")) if data.get("noIntMes") else None
@@ -169,7 +188,7 @@ class DataScreener:
                          ]
         column_names = ["filename"] + category_names + ["creation_date"] + ["df_xy"]
         df = pd.DataFrame(file_data, columns=column_names)
-        df.sort_values(by=['creation_date'], inplace=True)
+        df.sort_values(by=['cycle', 'creation_date'], inplace=True)
         return df
 
 
@@ -177,9 +196,10 @@ if __name__ == "__main__":
 
     data_manager = DataScreener(r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\REX245 XRK WAE-WA-049")
     data_manager.read_files()  # Build the DataFrame
-    data_manager.save_to_file()
+    data_manager.save_to_file(filename="categorized_data.pkl")
+    data_manager.save_to_file(filename="categorized_data.csv")
 
-    print(data_manager.df["creation_date"])
+   # print(data_manager.df["creation_date"])
 
 
 

@@ -1,6 +1,6 @@
 import pandas as pd
 import pyqtgraph as pg
-from pyqtgraph.Qt import QtWidgets
+from pyqtgraph.Qt import QtWidgets, QtCore
 
 from xrd_file_screener import DataScreener
 
@@ -43,15 +43,47 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
                 continue
 
             x = xy_df['X'].values
+            #y = self._normalize_series(xy_df['Y']) + idx * 0.05
             y = xy_df['Y'].values + idx * self.vertical_offset
 
             pen = pg.mkPen(color=pg.intColor(idx, hues=num_curves), width=2)
             self.plot_item.plot(x, y, pen=pen, name=[row.get('filename', f'Curve {idx}'), row.get('creation_date')])
             self.plot_item.addLegend(offset=(0, 1))
+        print("haaha")
 
+    def add_vertical_lines(self, lines_by_legend):
+        """
+        Add vertical lines to the plot with an extra legend.
 
+        :param lines_by_legend: dict mapping a legend label to a list of x positions.
+            For example:
+                {
+                    "Event A": [1, 2, 3, 4, 5],
+                    "Event B": [5, 6, 7, 8]
+                }
+        Each group of vertical lines will be drawn with the same color.
+        """
+        # Create a new legend for the vertical lines and add it to the plot.
+        vertical_legend = pg.LegendItem(offset=(50, 50))
+        vertical_legend.setParentItem(self.plot_item.graphicsItem())
 
+        num_groups = len(lines_by_legend)
+        for idx, (legend_label, x_positions) in enumerate(lines_by_legend.items()):
+            # Choose a color for this group.
+            color = pg.intColor(idx, hues=num_groups)
+            # Use a dashed line style.
+            pen = pg.mkPen(color=color, style=QtCore.Qt.DashLine, width=2)
+            # Draw a vertical line (angle=90) for each x position.
+            for x in x_positions:
+                line = pg.InfiniteLine(pos=x, angle=90, pen=pen)
+                self.plot_item.addItem(line)
+            # To add a legend entry, create a dummy plot item.
+            dummy_item = pg.PlotDataItem([0], [0], pen=pen)
+            vertical_legend.addItem(dummy_item, legend_label)
 
+    def _normalize_series(self, series):
+        normed_series = (series - series.min()) / (series.max() - series.min())
+        return normed_series
 
 # ------------------------------
 # Example usage of StackedPlotWidget
@@ -64,14 +96,24 @@ if __name__ == '__main__':
     data_manager.load_from_file(
         r"C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\categorized_data.pkl"
     )
+
     # Filter for a specific temperature and cycle range.
-    df = data_manager.filter_by_categories(temperature=350, cycle=[5, 10])
+
+    cycle_number = [1,20]
+    temperature = [345, 355]
+    pressure = [9.5, 10.5]
+    group_by = 'cycle'
+    max_val = "current_temp_step"
+    df = data_manager.filter_by_categories(cycle=cycle_number, temperature=temperature, group_by=group_by, max_by=max_val)
 
     # Create the Qt application.
     app = QtWidgets.QApplication([])
 
     # Create and show the stacked plot widget.
     widget = StackedPlotWidget(df, vertical_offset=500)
+    line = {"A": [20, 30, 40],
+            "B": [15, 35, 45]}
+    widget.add_vertical_lines(lines_by_legend=line)
     widget.show()
 
     # Start the Qt event loop.
