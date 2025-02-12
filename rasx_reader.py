@@ -5,6 +5,9 @@ import numpy as np
 from datetime import datetime
 import re
 
+import pandas as pd
+
+
 class RasxReader:
     def __init__(self, file_path):
         self.file_path = file_path
@@ -102,6 +105,7 @@ class RasxDataManager:
         # Optionally, you can copy or organize data here.
         self.temperature = self._parse_temperature(self.reader.metadata["MeasurementCondition_Temperature"])
         self.start_time = self.reader.metadata["StartTime"]
+        self.df_xy = self._get_xy_df()
 
     def _parse_temperature(self, temp_str):
 
@@ -116,6 +120,12 @@ class RasxDataManager:
         # Example function: filter the diffraction data based on a 2θ range.
         mask = (self.reader.x >= min_2theta) & (self.reader.x <= max_2theta)
         return self.reader.x[mask], self.reader.y[mask]
+
+    def _get_xy_df(self):
+        df = pd.DataFrame()
+        df['X'] = self.reader.x
+        df['Y'] = self.reader.y
+        return df
 
     def visualize_xy(self):
         x_filtered, y_filtered = self.filter_data(20, 40)

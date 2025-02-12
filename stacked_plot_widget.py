@@ -36,6 +36,8 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
 
     def _plot_stacked(self):
         """Plot each XY dataset as a stacked curve in the plot_item."""
+        if self.data_frame.empty:
+            return
         num_curves = len(self.data_frame)
         for idx, row in self.data_frame.iterrows():
             xy_df = row.get('df_xy')
@@ -47,7 +49,10 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             y = xy_df['Y'].values + idx * self.vertical_offset
 
             pen = pg.mkPen(color=pg.intColor(idx, hues=num_curves), width=2)
-            self.plot_item.plot(x, y, pen=pen, name=[row.get('filename', f'Curve {idx}'), str(row.get('creation_date'))])
+            label = self._create_xy_label(row)
+
+
+            self.plot_item.plot(x, y, pen=pen, name=[label])
             self.plot_item.addLegend(offset=(0, 1))
 
     def add_vertical_lines(self, df_lines):
@@ -123,10 +128,24 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             dummy_item = pg.PlotDataItem([0], [0], pen=pen)
             vertical_legend.addItem(dummy_item, legend_label)
 
-
     def _normalize_series(self, series):
         normed_series = (series - series.min()) / (series.max() - series.min())
         return normed_series
+
+    def _create_xy_label(self, row):
+        names_to_exclude = {"filename", "df_xy"}
+        labels = []
+        label = "Couldn't find info"
+        strings_to_delete = ['measurements_', 'current_', 'creation_']
+        for index, value in row.items():
+            if index not in names_to_exclude:
+                for s in strings_to_delete:
+                    index = index.replace(s, '')
+
+                labels.append(f"{index}: {value}")
+        if labels:
+            label = " ".join(labels)
+        return label
 
 # ------------------------------
 # Example usage of StackedPlotWidget

@@ -76,7 +76,7 @@ class DataScreener:
         """
         if self.df is None:
             print("No data available. Run read_files() or load_from_file() first.")
-            return None
+            return pd.DataFrame()
 
         filtered_df = self.df.copy()  # Work on a copy if needed
 
@@ -118,13 +118,14 @@ class DataScreener:
 
         for root, _, files in os.walk(self.directory):
             for file in files:
-                if file.endswith(".xy"):
+                if file.endswith(".rasx") and not 'temp' in file:
                     file_path = os.path.join(root, file)
+                    rasx_manager = RasxDataManager(file_path=file_path)
                     file_path_for_stats = Path(str(file_path))
                     filename, _ = os.path.splitext(file)  # Extract filename without extension
 
                     try:
-                        creation_date = self._get_meas_time_from_rasx(root=root, filename=filename)
+                        creation_date = rasx_manager.start_time
                        # print("ok")
                     except:
                         creation_time = file_path_for_stats.stat().st_mtime
@@ -132,8 +133,11 @@ class DataScreener:
                         print("not ok")
 
                     categories = self._extract_categories(filename)
+                    if not categories:
+                        categories = rasx_manager.categories
 
-                    df_xy = self._read_xy_data(file_path)  # Read (X, Y) data
+                    df_xy = rasx_manager.df_xy
+                    #df_xy = self._read_xy_data(file_path)  # Read (X, Y) data
 
                     file_data.append([file, *categories, creation_date, df_xy])  # Store DataFrame in last column
 
@@ -142,6 +146,7 @@ class DataScreener:
     def _extract_categories(self, filename):
         """Extracts categories from a filename.
         :returns gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature """
+
         pattern = (
                     r"(?:(?P<gas>[A-Z](?:[a-z])?\d*)\s*,\s+)?"  # Optional initial gas
                     r"(?P<pressure>\d+(?:\.\d+)?)bar"             # Pressure
@@ -169,7 +174,7 @@ class DataScreener:
             return gas, pressure, cycle, measurements_current_step, current_temp_step, measurements_no_interrupt, temperature
 
         else:
-            print("The filename did not match the expected format.")
+            print(f"The filename did not match the expected format: {filename}")
             return None, None, None, None, None, None, None
 
     def _read_xy_data(self, file_path):
@@ -198,11 +203,7 @@ class DataScreener:
         df.sort_values(by=['cycle', 'creation_date'], inplace=True)
         return df
 
-    def _get_meas_time_from_rasx(self, root, filename):
 
-        rasx_file_path = os.path.join(root, filename+'.rasx')
-        rasx_manager = RasxDataManager(file_path=rasx_file_path)
-        return rasx_manager.start_time
 
 
 if __name__ == "__main__":
@@ -214,9 +215,4 @@ if __name__ == "__main__":
 
    # print(data_manager.df["creation_date"])
 
-
-
-"REX245 XRK WAE-WA-049-01, 10dpm, IS 0.25deg, H2, 5bar C11_001_04_0004_0290-0C"
-
-"REX245 XRK WAE-WA-049-01, 10dpm, IS 0.25deg, H2, 5bar C2_001_01_0001_0289-0C"
 
