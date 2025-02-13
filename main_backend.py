@@ -77,15 +77,19 @@ class XRDFileScreenerController:
         widget = StackedPlotWidget(df_filtered, vertical_offset=self.vertical_offset)
         folder_path = r'C:\Daten\Kiki\ProgrammingStuff\in_situ_xrd_plotter\test_data\pks_files'
         file_path = os.path.join(folder_path, 'Mg_642654_Cu_borad.PTH')
-        parser = PTHParser(file_path=file_path)
-        #pks = parser.parse_file(file_path=file_path)
+        parser = PTHParser(folder_path=folder_path)
+        pks = parser.parse_folder()
 
-        #line={"A", pks.df_xy['x'].to_numpy()}
+        line = pd.DataFrame()
+        new_rows = []
+        for pth_instance in pks:
+            new_row = pth_instance.df_xy['x'].copy()
+            new_row.name = pth_instance.metadata['name']
+            new_rows.append(new_row)
 
-        line = {"A": [20, 30, 40],
-            "B": [15, 35, 45]}
-        line = pd.DataFrame(line)
-        widget.add_vertical_lines(df_lines=line)
+        # Concatenate the series (each as a row) into a new DataFrame
+        result_df = pd.concat(new_rows, axis=1)
+        widget.add_vertical_lines(df_lines=result_df)
         widget.show()
         sys.exit(app.exec())
 
@@ -105,8 +109,8 @@ if __name__ == '__main__':
                                 "measurements_no_interrupt", "temperature"
                          ]
     filters = { "temperature": [0, 500],
-                "cycle": 5,
-                "pressure": [8, 11]
+                "cycle": [0,25]
+
                 }
 
     # Group by the "cycle" column and select, within each group, the row with maximum "current_temp_step"
@@ -117,8 +121,8 @@ if __name__ == '__main__':
                                              pkl_path=pkl_path,
                                              filters=filters,
                                              vertical_offset=500,
-                                             group_by=group_by,
-                                             agg_by=agg_by
+                                           group_by=group_by,
+                                           agg_by=agg_by
                                             )
     controller.run()
 #todo: legende an linien heften

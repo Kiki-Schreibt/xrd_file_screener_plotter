@@ -59,6 +59,7 @@ class PTHParser:
 
         meta_lines, table_lines = self._split_lines(lines)
         self.metadata = self._parse_metadata(meta_lines)
+
         header, data_rows = self._parse_table_lines(table_lines)
 
         # Adjust rows so that all rows have the same number of columns.
@@ -119,6 +120,8 @@ class PTHParser:
                 metadata[key.strip()] = val.strip()
             else:
                 metadata.setdefault("comments", []).append(clean_line)
+        metadata['name'] = metadata['STOE Peak File'].partition('_')[0]
+        print(metadata['name'])
         return metadata
 
     def _parse_table_lines(self, table_lines: List[str]) -> Tuple[List[str], List[List[str]]]:
@@ -197,9 +200,9 @@ class PTHParser:
         """
         results = []
 
-        for file in os.listdir(folder_path):
+        for file in os.listdir(self.folder_path):
             if file.lower().endswith('.pth'):
-                file_path = os.path.join(folder_path, file)
+                file_path = os.path.join(self.folder_path, file)
 
                 data = self.parse_file(add_metadata=add_metadata, file_path=file_path, filename=file)
 
