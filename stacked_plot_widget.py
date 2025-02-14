@@ -1,3 +1,4 @@
+#stacked_plot_widget.py
 import pandas as pd
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
@@ -168,6 +169,14 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         # You can use plot_item.plot to draw a connecting line.
         self.plot_item.plot([x_pos, x_pos + offset_x], [y_pos, y_pos + offset_y],
                             pen=pg.mkPen(color=pen.color(), style=pg.QtCore.Qt.DashLine))
+
+    def update_plot(self, new_data_frame):
+        """
+        Clears the existing plot and re-plots using the new DataFrame.
+        """
+        self.data_frame = new_data_frame
+        self.plot_item.clear()  # Clear current items and legend
+        self._plot_stacked()
 
 # ------------------------------
 # Example usage of StackedPlotWidget
