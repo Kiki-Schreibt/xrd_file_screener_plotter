@@ -109,3 +109,20 @@ class PTHProcessor:
             if not pth.df_xy.empty and 'y' in pth.df_xy.columns:
                 pth.df_xy = pth.df_xy[pth.df_xy['y'] >= thresh]
         return self.pth_instances
+
+    def filter_by_y_count(self, max_counts: dict) -> list[PTHFileData]:
+        """
+        For each loaded PTHFileData instance, filter its df_xy DataFrame to keep only
+        the top N rows with the highest 'y' intensity.
+
+        :param max_counts: Dict mapping each instance's identifier (e.g. filename) to the maximum number of x values to show.
+        :return: The list of PTHFileData instances with their df_xy filtered.
+        """
+        default_max_count = 5  # Default number if none is provided.
+        for pth in self.pth_instances:
+            key = pth.filename  # assuming filename is unique.
+            max_count = max_counts.get(key, default_max_count)
+            if not pth.df_xy.empty and 'y' in pth.df_xy.columns:
+                # Sort descending by y and take the top max_count rows.
+                pth.df_xy = pth.df_xy.sort_values(by='y', ascending=False).head(max_count)
+        return self.pth_instances

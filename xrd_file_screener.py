@@ -158,7 +158,6 @@ class DataScreener:
         """
         Filters the DataFrame based on specific category columns.
         If a filter value is None, it is ignored.
-        Keyword arguments: key=column name and value either a single value or a tuple (min, max).
         Optionally group by a column and then, within each group, select the row with the
         min/max value of a given aggregation column.
 
@@ -174,10 +173,10 @@ class DataScreener:
             return pd.DataFrame()
 
         filtered_df = self.df.copy()
-        # Apply filtering criteria.
+        # Apply filtering criteria if provided.
         for col, crit_val in criteria.items():
             if crit_val is None:
-                continue  # Skip if no value is provided
+                continue
             if col in filtered_df.columns:
                 if isinstance(crit_val, (tuple, list)) and len(crit_val) == 2:
                     min_val, max_val = crit_val
@@ -187,19 +186,21 @@ class DataScreener:
             else:
                 print(f"Column {col} not found in the DataFrame. Skipping.")
 
+        # Apply grouping if specified.
         filtered_df = self._group_agg_by(group_by=group_by, agg_by=agg_by, df=filtered_df)
-
+        print('im_executed')
         return filtered_df.reset_index(drop=True)
 
     def _group_agg_by(self, group_by, agg_by, df):
         # If grouping and aggregation are specified, further filter the data.
-        filtered_df = pd.DataFrame()
         if group_by and agg_by:
             agg_column, agg_func = agg_by
             if group_by not in df.columns:
                 print(f"Group by column '{group_by}' not found. Skipping grouping.")
+                return df
             elif agg_column not in df.columns:
                 print(f"Aggregation column '{agg_column}' not found. Skipping grouping.")
+                return df
             else:
                 if agg_func.lower() == 'max':
                     idx = df.groupby(group_by)[agg_column].idxmax()
@@ -207,10 +208,11 @@ class DataScreener:
                     idx = df.groupby(group_by)[agg_column].idxmin()
                 else:
                     print("agg_by function must be 'min' or 'max'. Skipping grouping.")
-                    idx = None
-                if idx is not None:
-                    filtered_df = df.loc[idx].reset_index(drop=True)
-        return filtered_df if not filtered_df.empty else df
+                    return df
+                return df.loc[idx].reset_index(drop=True)
+        else:
+            # If no grouping is specified, just return the original DataFrame.
+            return df
 
     def get_available_categories(self):
         """

@@ -57,32 +57,21 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             self.plot_item.addLegend(offset=(0, 1))
             self._add_text_item_to_line(x, y, label, pen)
 
-
-
     def add_vertical_lines(self, df_lines):
         """
         Add vertical lines to the plot with an extra legend using a DataFrame.
-
-        In the provided DataFrame, each column name is treated as a legend label,
-        and the column's values are the x positions at which vertical lines are drawn.
-        For example, if the DataFrame is:
-
-             Event A    Event B
-        0       1         5
-        1       2         6
-        2       3         7
-        3       4         8
-        4       5       NaN
-
-        then vertical lines will be drawn at x=1,2,3,4,5 for "Event A" and
-        at x=5,6,7,8 for "Event B". Each group of lines will have its own color.
-
-        :param df_lines: DataFrame where each column represents a legend label and
-                         contains x positions for vertical lines.
+        Before adding new vertical lines, remove any existing legend.
         """
-        # Create a new legend for the vertical lines and add it to the plot.
-        vertical_legend = pg.LegendItem(offset=(50, 50))
-        vertical_legend.setParentItem(self.plot_item.graphicsItem())
+        # Remove the existing legend if it exists.
+        if hasattr(self, 'vertical_legend') and self.vertical_legend is not None:
+            try:
+                self.plot_item.removeItem(self.vertical_legend)
+            except Exception as e:
+                print("Error removing existing legend:", e)
+
+        # Create and store a new legend.
+        self.vertical_legend = pg.LegendItem(offset=(50, 50))
+        self.vertical_legend.setParentItem(self.plot_item.graphicsItem())
 
         num_groups = len(df_lines.columns)
         for idx, legend_label in enumerate(df_lines.columns):
@@ -92,15 +81,15 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             pen = pg.mkPen(color=color, style=QtCore.Qt.DashLine, width=2)
             # Get the x positions for this legend label and drop NaN values.
             x_positions = df_lines[legend_label].dropna().tolist()
-
             # Draw a vertical line (angle=90) for each x position.
             for x in x_positions:
                 line = pg.InfiniteLine(pos=x, angle=90, pen=pen)
                 self.plot_item.addItem(line)
-
             # Create a dummy plot item to add to the legend.
             dummy_item = pg.PlotDataItem([0], [0], pen=pen)
-            vertical_legend.addItem(dummy_item, legend_label)
+            self.vertical_legend.addItem(dummy_item, legend_label)
+
+
 
     def add_vertical_lines_from_struct(self, lines_by_legend):
         """

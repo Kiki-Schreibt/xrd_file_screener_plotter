@@ -60,12 +60,15 @@ class MainBackend:
     def filter_xrd_data(self) -> pd.DataFrame:
         """
         Apply user-specified filters to the XRD data. If no filter value is set,
-        the data remains unfiltered for that category.
+        the data remains unfiltered for that category; however, if grouping (group_by
+        and agg_by) is specified, that grouping is applied even if filters are empty.
         """
         df = self.data_screener.df
-        if self.filters:
+        # Apply filtering if either filters exist or grouping options are provided.
+        if self.filters or (self.group_by and self.agg_by):
             logging.info("Applying filters to XRD data...")
             if self.group_by and self.agg_by:
+                print('im filtering')
                 df_filtered = self.data_screener.filter_by_categories(
                     group_by=self.group_by,
                     agg_by=self.agg_by,
@@ -79,7 +82,7 @@ class MainBackend:
             return df_filtered.reset_index(drop=True)
         return df
 
-    def process_pth_data(self, criteria: dict = {}, thresholds: dict = None) -> pd.DataFrame:
+    def process_pth_data(self, criteria: dict = {}, thresholds: dict = None, max_counts: dict = None) -> pd.DataFrame:
         """
         Load and process PTH files, then extract vertical line data.
         Accepts an optional thresholds dict mapping filenames to individual y thresholds.
@@ -97,6 +100,10 @@ class MainBackend:
         if thresholds is None:
             thresholds = {}  # If none provided, the filter method will use the default threshold.
         self.pth_processor.filter_by_y_threshold(thresholds=thresholds)
+        # Use individual max_counts (or default if not provided)
+        if max_counts is None:
+            max_counts = {}
+        self.pth_processor.filter_by_y_count(max_counts=max_counts)
         return self.pth_processor.extract_vertical_lines()
 
     def show_plot(self, df_filtered: pd.DataFrame, df_lines: pd.DataFrame):
