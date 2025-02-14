@@ -28,7 +28,7 @@ class FunctionEvent(QEvent):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("XRD and PTH Data GUI")
+        self.setWindowTitle("XRD Data GUI")
         self.resize(1200, 800)
         # Variables to store paths, filters, etc.
         self.xrd_path = ""
@@ -212,8 +212,8 @@ class MainWindow(QMainWindow):
                 item_filename.setFlags(item_filename.flags() ^ Qt.ItemIsEditable)
                 self.pth_table_widget.setItem(row, 1, item_filename)
 
-                # Column 2: Threshold (editable, default value "80")
-                item_threshold = QTableWidgetItem("80")
+                # Column 2: Threshold (editable, default value "0")
+                item_threshold = QTableWidgetItem("0")
                 item_threshold.setTextAlignment(Qt.AlignCenter)
                 self.pth_table_widget.setItem(row, 2, item_threshold)
 
@@ -289,7 +289,7 @@ class MainWindow(QMainWindow):
                     try:
                         thresh = int(threshold_item.text())
                     except ValueError:
-                        thresh = 80
+                        thresh = 0
                     try:
                         max_count = int(max_count_item.text())
                     except ValueError:
@@ -381,7 +381,7 @@ class MainWindow(QMainWindow):
                 try:
                     thresh = int(threshold_item.text())
                 except ValueError:
-                    thresh = 80
+                    thresh = 0
                 try:
                     max_count = int(max_count_item.text())
                 except ValueError:
@@ -423,13 +423,13 @@ class MainWindow(QMainWindow):
             new_text = token_pattern
         self.custom_pattern_lineedit.setText(new_text)
 
-
     def run_on_main_thread(self, func):
         QApplication.instance().postEvent(self, FunctionEvent(func))
 
     def customEvent(self, event):
         if isinstance(event, FunctionEvent):
             event.func()
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
