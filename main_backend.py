@@ -7,7 +7,7 @@ import pandas as pd
 from pyqtgraph.Qt import QtWidgets
 
 # Import your custom classes.
-from xrd_file_screener import DataScreener  # Reads raw .rasx files and builds a DataFrame
+from xrd_file_screener import DataScreener, FilenameCategoryExtractor  # Reads raw .rasx files and builds a DataFrame
 from stacked_plot_widget import StackedPlotWidget  # Widget for plotting
 from pth_processor import PTHProcessor         # New class to handle PTH file processing
 
@@ -23,7 +23,8 @@ class MainBackend:
                  filters: dict,
                  vertical_offset: int,
                  group_by: str,
-                 agg_by: tuple):
+                 agg_by: tuple,
+                 custom_filename_pattern: str = None):
         """
         Initialize backend paths and filtering/aggregation criteria.
         """
@@ -35,9 +36,21 @@ class MainBackend:
         self.group_by = group_by
         self.agg_by = agg_by
 
+         # Use a custom FilenameCategoryExtractor if a custom pattern is provided.
+        if custom_filename_pattern:
+            extractor = FilenameCategoryExtractor(pattern=custom_filename_pattern)
+            self.data_screener = DataScreener(self.xrd_folder, category_extractors=[extractor])
+        else:
+            self.data_screener = DataScreener(self.xrd_folder)
+
+        if self.pth_folder:
+            from pth_processor import PTHProcessor
+            self.pth_processor = PTHProcessor(folder_path=self.pth_folder)
+
         # Initialize data screener and PTH processor.
         self.data_screener = DataScreener(self.xrd_folder)
-        self.pth_processor = PTHProcessor(folder_path=self.pth_folder)
+        if self.pth_folder:
+            self.pth_processor = PTHProcessor(folder_path=self.pth_folder)
 
     def load_xrd_data(self) -> bool:
         """

@@ -56,7 +56,6 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             self._add_text_item_to_line(x, y, label, pen)
 
 
-
     def add_vertical_lines(self, df_lines):
         """
         Add vertical lines to the plot with an extra legend using a DataFrame.
@@ -89,8 +88,6 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             # Create a dummy plot item to add to the legend.
             dummy_item = pg.PlotDataItem([0], [0], pen=pen)
             self.vertical_legend.addItem(dummy_item, legend_label)
-
-
 
     def add_vertical_lines_from_struct(self, lines_by_legend):
         """
