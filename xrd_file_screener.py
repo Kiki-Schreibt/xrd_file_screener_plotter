@@ -159,7 +159,15 @@ class DataScreener:
         Filters the DataFrame based on specific category columns.
         If a filter value is None, it is ignored.
         Keyword arguments: key=column name and value either a single value or a tuple (min, max).
-        Optionally group by a column and select the row with the max/min value in another column.
+        Optionally group by a column and then, within each group, select the row with the
+        min/max value of a given aggregation column.
+
+        Parameters:
+          group_by: The column name to group by.
+          agg_by: A tuple in the form (aggregation_column, 'min' or 'max').
+
+        Returns:
+          A filtered DataFrame.
         """
         if self.df is None:
             print("No data available. Run load() or read_files() first.")
@@ -178,7 +186,32 @@ class DataScreener:
                     filtered_df = filtered_df[filtered_df[col] == crit_val]
             else:
                 print(f"Column {col} not found in the DataFrame. Skipping.")
+
+        filtered_df = self._group_agg_by(group_by=group_by, agg_by=agg_by, df=filtered_df)
+
         return filtered_df.reset_index(drop=True)
+
+    def _group_agg_by(self, group_by, agg_by, df):
+        # If grouping and aggregation are specified, further filter the data.
+        filtered_df = pd.DataFrame()
+        if group_by and agg_by:
+            agg_column, agg_func = agg_by
+            if group_by not in df.columns:
+                print(f"Group by column '{group_by}' not found. Skipping grouping.")
+            elif agg_column not in df.columns:
+                print(f"Aggregation column '{agg_column}' not found. Skipping grouping.")
+            else:
+                if agg_func.lower() == 'max':
+                    idx = df.groupby(group_by)[agg_column].idxmax()
+                elif agg_func.lower() == 'min':
+                    idx = df.groupby(group_by)[agg_column].idxmin()
+                else:
+                    print("agg_by function must be 'min' or 'max'. Skipping grouping.")
+                    idx = None
+                if idx is not None:
+                    filtered_df = df.loc[idx].reset_index(drop=True)
+        return filtered_df if not filtered_df.empty else df
+
     def get_available_categories(self):
         """
         Returns a list of category names available from all registered extractors.

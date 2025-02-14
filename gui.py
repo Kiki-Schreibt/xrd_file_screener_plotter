@@ -1,24 +1,25 @@
-import sys, os, threading
-import pandas as pd
+#gui.py
+
+import os
+import sys
+import threading
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QGroupBox, QFormLayout,
-    QLineEdit, QListWidget, QListWidgetItem, QInputDialog, QMessageBox
+    QTableWidget, QTableWidgetItem, QMessageBox, QLineEdit
 )
 from PySide6.QtCore import Qt, QEvent
 
-# Import backend modules (assumed to be implemented as shown earlier)
+# Import backend modules.
 from main_backend import MainBackend
+from xrd_file_screener import DataScreener
 from stacked_plot_widget import StackedPlotWidget
-from xrd_file_screener import DataScreener  # used to retrieve available categories
-
 
 # Custom event to safely schedule a function to run on the main GUI thread.
 class FunctionEvent(QEvent):
     def __init__(self, func):
         super().__init__(QEvent.User)
         self.func = func
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -28,16 +29,17 @@ class MainWindow(QMainWindow):
         # Variables to store paths, filters, etc.
         self.xrd_path = ""
         self.pth_path = ""
-        self.filter_inputs = {}   # Will be populated with QLineEdits keyed by category.
-        self.selected_pth_files = []  # List of selected PTH filenames.
-        self.available_categories = []  # To be retrieved after selecting XRD data.
+        self.filter_inputs = {}   # QLineEdits keyed by category.
+        self.available_categories = []  # To be set after selecting XRD data.
+        # Use a table widget for PTH files (two columns: filename and threshold).
+        self.pth_table_widget = QTableWidget()
         self.init_ui()
 
     def init_ui(self):
         central_widget = QWidget()
         main_layout = QHBoxLayout(central_widget)
 
-        # Left panel: Control widgets
+        # Left panel: Control widgets.
         control_widget = QWidget()
         control_layout = QVBoxLayout(control_widget)
 
@@ -63,10 +65,12 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.filter_group)
 
         # --- PTH Instances Group ---
-        self.pth_group = QGroupBox("PTH Instances Selection")
-        self.pth_layout = QVBoxLayout(self.pth_group)
-        self.pth_list_widget = QListWidget()
-        self.pth_layout.addWidget(self.pth_list_widget)
+        self.pth_group = QGroupBox("PTH Instances")
+        pth_layout = QVBoxLayout(self.pth_group)
+        # Set up the table: two columns ("Filename" and "Threshold")
+        self.pth_table_widget.setColumnCount(2)
+        self.pth_table_widget.setHorizontalHeaderLabels(["Filename", "Threshold"])
+        pth_layout.addWidget(self.pth_table_widget)
         control_layout.addWidget(self.pth_group)
 
         # --- Process and Plot Button ---
@@ -77,7 +81,7 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(control_widget, 1)
 
-        # Right panel: Plot area
+        # Right panel: Plot area.
         self.plot_container = QWidget()
         self.plot_layout = QVBoxLayout(self.plot_container)
         # Initially empty; will be filled with the StackedPlotWidget.
@@ -91,7 +95,7 @@ class MainWindow(QMainWindow):
         if folder:
             self.xrd_path = folder
             self.xrd_path_label.setText(self.xrd_path)
-            # Instantiate a DataScreener to get available categories.
+            # Use DataScreener to get available categories.
             screener = DataScreener(source=self.xrd_path)
             screener.load()
             self.available_categories = screener.get_available_categories()
@@ -102,10 +106,10 @@ class MainWindow(QMainWindow):
                     child.widget().deleteLater()
             self.filter_inputs = {}
             for category in self.available_categories:
-                line_edit = QLineEdit()
-                line_edit.setPlaceholderText("Leave blank for all")
-                self.filter_inputs[category] = line_edit
-                self.filter_form.addRow(category, line_edit)
+                le = QLineEdit()
+                le.setPlaceholderText("Leave blank for all")
+                self.filter_inputs[category] = le
+                self.filter_form.addRow(category, le)
 
     def select_pth_data(self):
         options = QFileDialog.Options()
@@ -113,16 +117,77 @@ class MainWindow(QMainWindow):
         if folder:
             self.pth_path = folder
             self.pth_path_label.setText(self.pth_path)
-            # Populate the list widget with available PTH filenames.
-            from pth_processor import PTHProcessor  # import here to ensure dependency
+            # Populate the table with available PTH filenames.
+            from pth_processor import PTHProcessor
             processor = PTHProcessor(folder_path=self.pth_path)
             processor.load_pth_files(add_metadata=True)
-            self.pth_list_widget.clear()
-            for filename in processor.get_available_filenames():
-                item = QListWidgetItem(filename)
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Unchecked)
-                self.pth_list_widget.addItem(item)
+            filenames = processor.get_available_filenames()
+
+            # Set up table with 3 columns: Include, Filename, and Threshold.
+            self.pth_table_widget.setColumnCount(3)
+            self.pth_table_widget.setHorizontalHeaderLabels(["Include", "Filename", "Threshold"])
+            self.pth_table_widget.setRowCount(len(filenames))
+
+            for row, filename in enumerate(filenames):
+                # Column 0: Checkbox (default unchecked)
+                item_checkbox = QTableWidgetItem()
+                item_checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                item_checkbox.setCheckState(Qt.Unchecked)
+                self.pth_table_widget.setItem(row, 0, item_checkbox)
+
+                # Column 1: Filename (non-editable)
+                item_filename = QTableWidgetItem(filename)
+                item_filename.setFlags(item_filename.flags() ^ Qt.ItemIsEditable)
+                self.pth_table_widget.setItem(row, 1, item_filename)
+
+                # Column 2: Threshold (editable, default value "0")
+                item_threshold = QTableWidgetItem("0")
+                item_threshold.setTextAlignment(Qt.AlignCenter)
+                self.pth_table_widget.setItem(row, 2, item_threshold)
+
+            self.pth_table_widget.resizeColumnsToContents()
+
+    @staticmethod
+    def parse_filter_value(text):
+        """
+        Convert a filter string into an appropriate type.
+          - "0-100" becomes a tuple (0, 100)
+          - "A, B, C" becomes a list ["A", "B", "C"] (with numeric conversion if possible)
+          - Numeric strings are converted to int or float.
+          - Otherwise, returns the string.
+        """
+        text = text.strip()
+        # Check for a range input.
+        if '-' in text and not text.startswith('-'):
+            parts = text.split('-')
+            if len(parts) == 2:
+                try:
+                    lower = float(parts[0].strip())
+                    upper = float(parts[1].strip())
+                    return (lower, upper)
+                except ValueError:
+                    pass
+        # Check for a comma-separated list.
+        if ',' in text:
+            parts = [p.strip() for p in text.split(',')]
+            parsed_parts = []
+            for p in parts:
+                try:
+                    # Convert to float if possible; otherwise keep as string.
+                    if '.' in p:
+                        parsed_parts.append(float(p))
+                    else:
+                        parsed_parts.append(int(p))
+                except ValueError:
+                    parsed_parts.append(p)
+            return parsed_parts
+        # Try numeric conversion.
+        try:
+            if text.isdigit():
+                return int(text)
+            return float(text)
+        except ValueError:
+            return text
 
     def process_and_plot(self):
         # Build filter dictionary from inputs.
@@ -130,28 +195,33 @@ class MainWindow(QMainWindow):
         for category, widget in self.filter_inputs.items():
             text = widget.text().strip()
             if text:
-                filters[category] = text  # For simplicity, using text as exact match
+                filters[category] = MainWindow.parse_filter_value(text)
 
-        # Build thresholds mapping for PTH instances.
-        thresholds = {}
+        # Read thresholds and check which files are selected.
         selected_files = []
-        for i in range(self.pth_list_widget.count()):
-            item = self.pth_list_widget.item(i)
-            if item.checkState() == Qt.Checked:
-                filename = item.text()
-                # Prompt user to enter a threshold for each selected file.
-                thresh, ok = QInputDialog.getInt(self, "Set Threshold",
-                                                 f"Enter y-threshold for {filename}:", 80, 0, 1000)
-                if ok:
-                    thresholds[filename] = thresh
-                    selected_files.append(filename)
+        thresholds = {}
+        rows = self.pth_table_widget.rowCount()
+        for row in range(rows):
+            include_item = self.pth_table_widget.item(row, 0)
+            if include_item is not None and include_item.checkState() == Qt.Checked:
+                filename_item = self.pth_table_widget.item(row, 1)
+                threshold_item = self.pth_table_widget.item(row, 2)
+                if filename_item is None or threshold_item is None:
+                    continue
+                filename = filename_item.text()
+                try:
+                    thresh = int(threshold_item.text())
+                except ValueError:
+                    thresh = 0
+                selected_files.append(filename)
+                thresholds[filename] = thresh
 
         if not self.xrd_path or not self.pth_path:
             QMessageBox.warning(self, "Error", "Please select both XRD and PTH data folders.")
             return
 
         # Create MainBackend instance.
-        vertical_offset = 500  # could be dynamic
+        vertical_offset = 500  # This could be dynamic.
         group_by = 'cycle'
         agg_by = ("current_temp_step", "max")
         backend = MainBackend(
@@ -178,13 +248,13 @@ class MainWindow(QMainWindow):
             )
             # Schedule plot update on the main thread.
             def update_plot():
-                # Clear existing plot widget if any.
+                # Clear any existing plot widget.
                 while self.plot_layout.count():
                     widget = self.plot_layout.takeAt(0).widget()
                     if widget:
                         widget.setParent(None)
                 plot_widget = StackedPlotWidget(df_filtered, vertical_offset=vertical_offset)
-                plot_widget.add_vertical_lines(df_lines)
+                plot_widget.add_vertical_lines(df_lines=df_lines)
                 self.plot_layout.addWidget(plot_widget)
             self.run_on_main_thread(update_plot)
 
