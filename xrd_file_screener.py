@@ -69,15 +69,23 @@ class FilenameCategoryExtractor(BaseCategoryExtractor):
         if match:
             raw_data = match.groupdict()
             result = {}
+
             for key, value in raw_data.items():
+
                 # If a conversion function is provided, apply it.
                 if key in self.conversion_mapping and value is not None:
                     try:
                         result[key] = self.conversion_mapping[key](value)
                     except Exception:
                         result[key] = None
+                elif 'cycle' in key:
+                    try:
+                        result[key] = self.conversion_mapping[key](value)
+                    except Exception:
+                        result[key] = 1
                 else:
                     result[key] = value
+                    
             return result
         else:
             # Return a dictionary with all keys set to None if there's no match.

@@ -17,6 +17,7 @@ from main_backend import MainBackend
 from xrd_file_screener import DataScreener
 from stacked_plot_widget import StackedPlotWidget
 
+#todo: implement x-shift for tpth data instances in table
 
 # Custom event to safely schedule a function to run on the main GUI thread.
 class FunctionEvent(QEvent):
