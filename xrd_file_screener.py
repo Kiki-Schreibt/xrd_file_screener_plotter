@@ -25,47 +25,62 @@ class BaseCategoryExtractor:
 
 class FilenameCategoryExtractor(BaseCategoryExtractor):
     """
-    Extracts categories from the filename using a regex pattern.
-
-    Expected categories (if found):
-      - gas, pressure, cycle, measurements_current_step,
-        current_temp_step, measurements_no_interrupt, temperature
+    Dynamically extracts categories from the filename using a regex pattern.
+    The regex's named groups determine the keys, so you don't need to predefine them.
+    Optionally, you can also provide a conversion mapping to convert values (e.g., to int or float).
     """
-    def __init__(self, pattern: str = None):
-        # Default regex pattern taken from your implementation.
-        self.pattern = pattern or (
-                    r"(?:(?P<gas>[A-Z](?:[a-z])?\d*)\s*,\s+)?"          # Optional gas
-                    r"(?P<pressure>\d+(?:\.\d+)?)bar"                     # Pressure
-                    r"(?:\s+C(?P<cycle>\d+))?"                            # Optional cycle
-                    r"(?:.*?_)"                                         # Allow extra text up to the underscore
-                    r"(?P<numMes>\d+)_"                                  # numMes digits
-                    r"(?P<currentStep>\d+)_"                             # currentStep digits
-                    r"(?P<noIntMes>\d+)_"                                # noIntMes digits
-                    r"(?P<temperature>\d+)-0C$"                          # Temperature then literal -0C at the end
-                )
-        self.categories = [
-            "gas", "pressure", "cycle", "measurements_current_step",
-            "current_temp_step", "measurements_no_interrupt", "temperature"
-        ]
+    def __init__(self, pattern: str = None, conversion_mapping: dict = None):
+        # Default regex pattern if none is provided.
+        self.default_pattern = (
+            r"(?P<gas>[A-Z](?:[a-z])?\d*)\s*,\s+"
+            r"(?P<pressure>\d+(?:\.\d+)?)bar"
+            r"(?:\s+C(?P<cycle>\d+))?"
+            r"(?:.*?_)"                                         
+            r"(?P<numMes>\d+)_"                                  
+            r"(?P<currentStep>\d+)_"                             
+            r"(?P<noIntMes>\d+)_"                                
+            r"(?P<temperature>\d+)-0C$"
+        )
+        self.pattern = pattern or self.default_pattern
+        self.compiled_pattern = re.compile(self.pattern)
+        # Dynamically set categories from the regex named groups.
+        self.categories = list(self.compiled_pattern.groupindex.keys())
+        # Optionally, a mapping of group names to conversion functions.
+        self.conversion_mapping = conversion_mapping or {
+            'pressure': float,
+            'cycle': int,
+            'numMes': int,
+            'currentStep': int,
+            'noIntMes': int,
+            'temperature': float,
+        }
+
+    def update_pattern(self, new_pattern: str, conversion_mapping: dict = None):
+        """Update the regex pattern and optionally the conversion mapping."""
+        self.pattern = new_pattern
+        self.compiled_pattern = re.compile(new_pattern)
+        self.categories = list(self.compiled_pattern.groupindex.keys())
+        if conversion_mapping is not None:
+            self.conversion_mapping = conversion_mapping
 
     def extract(self, filename: str, rasx_manager: RasxDataManager) -> dict:
-        filename_clean, _ = os.path.splitext(filename) #extract filename without extension
-        match = re.search(self.pattern, filename_clean)
+        filename_clean, _ = os.path.splitext(filename)
+        match = self.compiled_pattern.search(filename_clean)
         if match:
-            data = match.groupdict()
-            # Map and convert values where appropriate.
-            result = {
-                "gas": data.get("gas") if data.get("gas") else None,
-                "pressure": float(data.get("pressure")) if data.get("pressure") else None,
-                "cycle": int(data.get("cycle")) if data.get("cycle") else 1,
-                "measurements_current_step": int(data.get("numMes")) if data.get("numMes") else None,
-                "current_temp_step": int(data.get("currentStep")) if data.get("currentStep") else None,
-                "measurements_no_interrupt": int(data.get("noIntMes")) if data.get("noIntMes") else None,
-                "temperature": float(data.get("temperature")) if data.get("temperature") else None,
-            }
+            raw_data = match.groupdict()
+            result = {}
+            for key, value in raw_data.items():
+                # If a conversion function is provided, apply it.
+                if key in self.conversion_mapping and value is not None:
+                    try:
+                        result[key] = self.conversion_mapping[key](value)
+                    except Exception:
+                        result[key] = None
+                else:
+                    result[key] = value
             return result
         else:
-            # If no match, return keys with None values.
+            # Return a dictionary with all keys set to None if there's no match.
             return {key: None for key in self.categories}
 
     def get_categories(self) -> list:
@@ -265,7 +280,7 @@ class DataScreener:
                     records.append(record)
         return records
 
-    def _create_dataframe(self, records: list):
+    def _create_dataframe(self, records: list, sort_key=""):
         """
         Creates and returns a DataFrame from a list of record dictionaries.
         The DataFrame is sorted by 'cycle' and 'creation_date' if these columns exist.
@@ -274,7 +289,9 @@ class DataScreener:
             print("No records to build DataFrame.")
             return pd.DataFrame()
         df = pd.DataFrame(records)
-        sort_cols = [col for col in ['cycle', 'creation_date'] if col in df.columns]
+
+        sort_cols = [col for col in [sort_key, 'cycle', 'creation_date'] if col in df.columns]
+
         if sort_cols:
             df.sort_values(by=sort_cols, inplace=True)
         return df.reset_index(drop=True)
