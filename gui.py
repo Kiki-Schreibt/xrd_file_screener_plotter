@@ -361,9 +361,9 @@ class MainWindow(QMainWindow):
                 if isinstance(item, pg.InfiniteLine):
                     plot_item.removeItem(item)
             # Also remove any old legends.
-            for item in plot_item.items[:]:
-                if isinstance(item, pg.LegendItem):
-                    plot_item.removeItem(item)
+            #for item in plot_item.items[:]:
+            #    if isinstance(item, pg.LegendItem):
+            #        plot_item.removeItem(item)
             # Add new vertical lines.
             self.current_plot_widget.add_vertical_lines(df_lines=df_lines)
     def run_on_main_thread(self, func):

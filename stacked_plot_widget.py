@@ -40,6 +40,7 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         if self.data_frame.empty:
             return
         num_curves = len(self.data_frame)
+        self.plot_item.addLegend(offset=(0, 1))
         for idx, row in self.data_frame.iterrows():
             xy_df = row.get('df_xy')
             if xy_df is None or xy_df.empty:
@@ -51,11 +52,10 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
 
             pen = pg.mkPen(color=pg.intColor(idx, hues=num_curves), width=2)
             label = self._create_xy_label(row)
-
-
             self.plot_item.plot(x, y, pen=pen, name=[label])
-            self.plot_item.addLegend(offset=(0, 1))
             self._add_text_item_to_line(x, y, label, pen)
+
+
 
     def add_vertical_lines(self, df_lines):
         """
@@ -65,7 +65,8 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         # Remove the existing legend if it exists.
         if hasattr(self, 'vertical_legend') and self.vertical_legend is not None:
             try:
-                self.plot_item.removeItem(self.vertical_legend)
+                self.vertical_legend.setParentItem(None)
+                self.vertical_legend = None
             except Exception as e:
                 print("Error removing existing legend:", e)
 
