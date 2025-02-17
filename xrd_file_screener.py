@@ -229,6 +229,10 @@ class DataScreener:
                     idx = df.groupby(group_by)[agg_column].idxmax()
                 elif agg_func.lower() == 'min':
                     idx = df.groupby(group_by)[agg_column].idxmin()
+                elif agg_func.lower() == 'minmax':
+                    idx_min = df.groupby(group_by)[agg_column].idxmin()
+                    idx_max = df.groupby(group_by)[agg_column].idxmax()
+                    idx = pd.concat([idx_min, idx_max]).sort_index()
                 else:
                     print("agg_by function must be 'min' or 'max'. Skipping grouping.")
                     return df
