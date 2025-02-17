@@ -85,7 +85,7 @@ class FilenameCategoryExtractor(BaseCategoryExtractor):
                         result[key] = 1
                 else:
                     result[key] = value
-                    
+
             return result
         else:
             # Return a dictionary with all keys set to None if there's no match.
