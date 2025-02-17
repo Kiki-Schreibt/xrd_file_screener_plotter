@@ -172,6 +172,17 @@ class PatternBuilderWidget(QGroupBox):
         self.custom_pattern_lineedit.setText(new_text)
 
 
+class YOffsetSpinningBox(QGroupBox):
+    def __init__(self, parent=None):
+        super().__init__("YOffsetSpinningBox", parent)
+        layout = QHBoxLayout(self)
+        self.y_offset_label = QLabel("Y Offset:")
+        self.y_offset_spinbox = QSpinBox()
+        self.y_offset_spinbox.setRange(0, 10000)
+        self.y_offset_spinbox.setValue(500)
+        layout.addWidget(self.y_offset_label)
+        layout.addWidget(self.y_offset_spinbox)
+
 # ----------------------------
 # MainWindow that composes the panels
 # ----------------------------
@@ -190,6 +201,10 @@ class MainWindow(QMainWindow):
         self.current_plot_widget = None
         self.worker = None
 
+        self._init_ui()
+        self._init_connections()
+
+    def _init_ui(self):
         # Main layout containers
         central_widget = QWidget()
         main_layout = QHBoxLayout(central_widget)
@@ -200,8 +215,6 @@ class MainWindow(QMainWindow):
 
         # Instantiate each control panel
         self.data_selection = DataSelectionWidget()
-        self.data_selection.xrd_select_button.clicked.connect(self.select_xrd_data)
-        self.data_selection.pth_select_button.clicked.connect(self.select_pth_data)
         control_layout.addWidget(self.data_selection)
 
         self.filter_widget = FilterWidget()
@@ -210,6 +223,11 @@ class MainWindow(QMainWindow):
         self.grouping_options = GroupingOptionsWidget()
         control_layout.addWidget(self.grouping_options)
 
+        # Y Offset controls
+        self.y_offset_layout = YOffsetSpinningBox()
+        control_layout.addWidget(self.y_offset_layout)
+        control_layout.addStretch()
+
         self.pth_instances = PTHInstancesWidget()
         control_layout.addWidget(self.pth_instances)
 
@@ -217,23 +235,7 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.pattern_builder)
 
         self.process_button = QPushButton("Process and Plot")
-        self.process_button.clicked.connect(self.process_and_plot)
         control_layout.addWidget(self.process_button)
-
-        # Y Offset controls
-        y_offset_layout = QHBoxLayout()
-        self.y_offset_label = QLabel("Y Offset:")
-        self.y_offset_spinbox = QSpinBox()
-        self.y_offset_spinbox.setRange(0, 10000)
-        self.y_offset_spinbox.setValue(500)
-        y_offset_layout.addWidget(self.y_offset_label)
-        y_offset_layout.addWidget(self.y_offset_spinbox)
-        control_layout.addLayout(y_offset_layout)
-
-        # Connect y offset editingFinished signal for live update
-        self.y_offset_spinbox.editingFinished.connect(self.onYOffsetChanged)
-
-        control_layout.addStretch()
 
         # Right panel: Plot area
         self.plot_container = QWidget()
@@ -243,6 +245,13 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.plot_container, 3)
         self.setCentralWidget(central_widget)
 
+    def _init_connections(self):
+        #Button connnections
+        self.data_selection.xrd_select_button.clicked.connect(self.select_xrd_data)
+        self.data_selection.pth_select_button.clicked.connect(self.select_pth_data)
+        self.process_button.clicked.connect(self.process_and_plot)
+        # Connect y offset editingFinished signal for live update
+        self.y_offset_layout.y_offset_spinbox.editingFinished.connect(self.onYOffsetChanged)
         # Connect change events from the PTH table
         self.pth_instances.table_widget.itemChanged.connect(self.on_pth_table_item_changed)
 
@@ -447,6 +456,7 @@ class MainWindow(QMainWindow):
                         widget.setParent(None)
                 self.current_plot_widget = StackedPlotWidget(df_filtered, vertical_offset=new_offset)
                 self.plot_layout.addWidget(self.current_plot_widget)
+            self.update_vertical_lines()
 
 
 if __name__ == '__main__':
