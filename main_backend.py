@@ -82,7 +82,6 @@ class MainBackend:
         if self.filters or (self.group_by and self.agg_by):
             logging.info("Applying filters to XRD data...")
             if self.group_by and self.agg_by:
-                print('im filtering')
                 df_filtered = self.data_screener.filter_by_categories(
                     group_by=self.group_by,
                     agg_by=self.agg_by,

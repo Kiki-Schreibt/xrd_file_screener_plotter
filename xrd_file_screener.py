@@ -211,7 +211,6 @@ class DataScreener:
 
         # Apply grouping if specified.
         filtered_df = self._group_agg_by(group_by=group_by, agg_by=agg_by, df=filtered_df)
-        print('im_executed')
         return filtered_df.reset_index(drop=True)
 
     def _group_agg_by(self, group_by, agg_by, df):
