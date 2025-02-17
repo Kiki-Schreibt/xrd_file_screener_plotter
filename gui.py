@@ -1,7 +1,5 @@
-#gui.py
 import os
 import sys
-import threading
 import pandas as pd
 import pyqtgraph as pg
 
@@ -10,23 +8,46 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QFileDialog, QGroupBox, QFormLayout,
     QTableWidget, QTableWidgetItem, QMessageBox, QLineEdit, QComboBox, QCheckBox, QSpinBox
 )
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt, QThread, Signal
 
 # Import backend modules (assumed to be defined elsewhere)
 from main_backend import MainBackend
 from xrd_file_screener import DataScreener
 from stacked_plot_widget import StackedPlotWidget
 
-# A custom event for safely scheduling functions on the main thread
-class FunctionEvent(QEvent):
-    def __init__(self, func):
-        super().__init__(QEvent.User)
-        self.func = func
+# ----------------------------------------------------------------------
+# Worker thread class using QThread and signals for data processing
+# ----------------------------------------------------------------------
+class DataProcessingWorker(QThread):
+    # Signal that sends the filtered dataframe and any additional data (e.g., vertical lines data)
+    processingFinished = Signal(object, object)
+
+    def __init__(self, backend, selected_files, thresholds, max_counts):
+        super().__init__()
+        self.backend = backend
+        self.selected_files = selected_files
+        self.thresholds = thresholds
+        self.max_counts = max_counts
+
+    def run(self):
+        # Load and filter the XRD data
+        if not self.backend.load_xrd_data():
+            return
+        df_filtered = self.backend.filter_xrd_data()
+        # If PTH data is available, process it
+        df_lines = pd.DataFrame()
+        if self.backend.pth_folder:
+            df_lines = self.backend.process_pth_data(
+                criteria={"filename": self.selected_files},
+                thresholds=self.thresholds,
+                max_counts=self.max_counts
+            )
+        # Emit the processed data to be used by the GUI thread
+        self.processingFinished.emit(df_filtered, df_lines)
 
 # ----------------------------
 # Panel Classes (each a QGroupBox)
 # ----------------------------
-
 class DataSelectionWidget(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Data Selection", parent)
@@ -150,10 +171,10 @@ class PatternBuilderWidget(QGroupBox):
         new_text = current_text + " " + token_pattern if current_text else token_pattern
         self.custom_pattern_lineedit.setText(new_text)
 
+
 # ----------------------------
 # MainWindow that composes the panels
 # ----------------------------
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -167,6 +188,7 @@ class MainWindow(QMainWindow):
         self.current_df_filtered = None
         self.backend = None
         self.current_plot_widget = None
+        self.worker = None
 
         # Main layout containers
         central_widget = QWidget()
@@ -197,6 +219,20 @@ class MainWindow(QMainWindow):
         self.process_button = QPushButton("Process and Plot")
         self.process_button.clicked.connect(self.process_and_plot)
         control_layout.addWidget(self.process_button)
+
+        # Y Offset controls
+        y_offset_layout = QHBoxLayout()
+        self.y_offset_label = QLabel("Y Offset:")
+        self.y_offset_spinbox = QSpinBox()
+        self.y_offset_spinbox.setRange(0, 10000)
+        self.y_offset_spinbox.setValue(500)
+        y_offset_layout.addWidget(self.y_offset_label)
+        y_offset_layout.addWidget(self.y_offset_spinbox)
+        control_layout.addLayout(y_offset_layout)
+
+        # Connect y offset editingFinished signal for live update
+        self.y_offset_spinbox.editingFinished.connect(self.onYOffsetChanged)
+
         control_layout.addStretch()
 
         # Right panel: Plot area
@@ -209,22 +245,6 @@ class MainWindow(QMainWindow):
 
         # Connect change events from the PTH table
         self.pth_instances.table_widget.itemChanged.connect(self.on_pth_table_item_changed)
-
-
-        # Add a new GUI element for Y offset
-        y_offset_layout = QHBoxLayout()
-        self.y_offset_label = QLabel("Y Offset:")
-        self.y_offset_spinbox = QSpinBox()
-        self.y_offset_spinbox.setRange(0, 10000)  # set a reasonable range
-        self.y_offset_spinbox.setValue(500)         # default value
-        y_offset_layout.addWidget(self.y_offset_label)
-        y_offset_layout.addWidget(self.y_offset_spinbox)
-        control_layout.addLayout(y_offset_layout)
-
-        self.process_button = QPushButton("Process and Plot")
-        self.process_button.clicked.connect(self.process_and_plot)
-        control_layout.addWidget(self.process_button)
-        control_layout.addStretch()
 
     def select_xrd_data(self):
         folder = QFileDialog.getExistingDirectory(self, "Select XRD Data Folder")
@@ -338,45 +358,42 @@ class MainWindow(QMainWindow):
             pth_folder=self.pth_path if self.pth_path else None,
             filters=filters,
             vertical_offset=vertical_offset,
-            group_by=(self.grouping_options.group_by_combo.currentText() if self.grouping_options.group_by_combo.currentText() != "None" else None),
+            group_by=(self.grouping_options.group_by_combo.currentText()
+                      if self.grouping_options.group_by_combo.currentText() != "None" else None),
             agg_by=((self.grouping_options.agg_column_combo.currentText(), self.grouping_options.agg_func_combo.currentText())
                     if self.grouping_options.agg_column_combo.currentText() != "None" else None),
             custom_filename_pattern=custom_pattern
         )
 
-        def process_data():
-            df_lines = pd.DataFrame()
-            if not self.backend.load_xrd_data():
-                return
-            self.current_df_filtered = self.backend.filter_xrd_data()
-            if self.current_df_filtered.empty:
-                print("Filtered XRD data is empty.")
-                return
-            if self.backend.pth_folder:
-                df_lines = self.backend.process_pth_data(
-                    criteria={"filename": selected_files},
-                    thresholds=thresholds,
-                    max_counts=max_counts
-                )
-            def update_plot():
-                # Clear existing plot widget
-                while self.plot_layout.count():
-                    widget = self.plot_layout.takeAt(0).widget()
-                    if widget:
-                        widget.setParent(None)
-                self.current_plot_widget = StackedPlotWidget(self.current_df_filtered, vertical_offset=vertical_offset)
-                if not df_lines.empty:
-                    self.current_plot_widget.add_vertical_lines(df_lines=df_lines)
-                self.plot_layout.addWidget(self.current_plot_widget)
-            self.run_on_main_thread(update_plot)
-        threading.Thread(target=process_data).start()
+        # Start the worker thread for processing data
+        self.worker = DataProcessingWorker(
+            backend=self.backend,
+            selected_files=selected_files,
+            thresholds=thresholds,
+            max_counts=max_counts
+        )
+        self.worker.processingFinished.connect(self.onProcessingFinished)
+        self.worker.start()
+
+    def onProcessingFinished(self, df_filtered, df_lines):
+        self.current_df_filtered = df_filtered
+        # Clear any existing plot widget
+        while self.plot_layout.count():
+            widget = self.plot_layout.takeAt(0).widget()
+            if widget:
+                widget.setParent(None)
+        # Create the new plot widget with the updated vertical offset
+        self.current_plot_widget = StackedPlotWidget(self.current_df_filtered, vertical_offset=self.y_offset_spinbox.value())
+        if not df_lines.empty:
+            self.current_plot_widget.add_vertical_lines(df_lines=df_lines)
+        self.plot_layout.addWidget(self.current_plot_widget)
 
     def on_pth_table_item_changed(self, item):
         if item.column() == 0:
             self.update_vertical_lines()
 
     def update_vertical_lines(self):
-        if not self.backend or self.current_df_filtered.empty or not self.current_plot_widget:
+        if not self.backend or self.current_df_filtered is None or not self.current_plot_widget:
             return
         selected_files = []
         thresholds = {}
@@ -414,12 +431,22 @@ class MainWindow(QMainWindow):
                 plot_item.removeItem(item)
         self.current_plot_widget.add_vertical_lines(df_lines=df_lines)
 
-    def run_on_main_thread(self, func):
-        QApplication.instance().postEvent(self, FunctionEvent(func))
-
-    def customEvent(self, event):
-        if isinstance(event, FunctionEvent):
-            event.func()
+    def onYOffsetChanged(self):
+        # Update the plot when y offset editing is finished
+        if self.current_plot_widget:
+            new_offset = self.y_offset_spinbox.value()
+            # If your StackedPlotWidget supports dynamic updating via a setter method, use it:
+            if hasattr(self.current_plot_widget, 'set_vertical_offset'):
+                self.current_plot_widget.set_vertical_offset(new_offset)
+            else:
+                # Otherwise, re-create the plot with the new offset
+                df_filtered = self.current_df_filtered
+                while self.plot_layout.count():
+                    widget = self.plot_layout.takeAt(0).widget()
+                    if widget:
+                        widget.setParent(None)
+                self.current_plot_widget = StackedPlotWidget(df_filtered, vertical_offset=new_offset)
+                self.plot_layout.addWidget(self.current_plot_widget)
 
 
 if __name__ == '__main__':
