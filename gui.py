@@ -1,3 +1,4 @@
+#gui.py
 import os
 import sys
 import threading
@@ -7,7 +8,7 @@ import pyqtgraph as pg
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QGroupBox, QFormLayout,
-    QTableWidget, QTableWidgetItem, QMessageBox, QLineEdit, QComboBox, QCheckBox
+    QTableWidget, QTableWidgetItem, QMessageBox, QLineEdit, QComboBox, QCheckBox, QSpinBox
 )
 from PySide6.QtCore import Qt, QEvent
 
@@ -209,6 +210,22 @@ class MainWindow(QMainWindow):
         # Connect change events from the PTH table
         self.pth_instances.table_widget.itemChanged.connect(self.on_pth_table_item_changed)
 
+
+        # Add a new GUI element for Y offset
+        y_offset_layout = QHBoxLayout()
+        self.y_offset_label = QLabel("Y Offset:")
+        self.y_offset_spinbox = QSpinBox()
+        self.y_offset_spinbox.setRange(0, 10000)  # set a reasonable range
+        self.y_offset_spinbox.setValue(500)         # default value
+        y_offset_layout.addWidget(self.y_offset_label)
+        y_offset_layout.addWidget(self.y_offset_spinbox)
+        control_layout.addLayout(y_offset_layout)
+
+        self.process_button = QPushButton("Process and Plot")
+        self.process_button.clicked.connect(self.process_and_plot)
+        control_layout.addWidget(self.process_button)
+        control_layout.addStretch()
+
     def select_xrd_data(self):
         folder = QFileDialog.getExistingDirectory(self, "Select XRD Data Folder")
         if folder:
@@ -313,7 +330,7 @@ class MainWindow(QMainWindow):
             if pattern_text:
                 custom_pattern = pattern_text
 
-        vertical_offset = 500
+        vertical_offset = self.y_offset_spinbox.value()
         # Create backend instance
         self.backend = MainBackend(
             xrd_folder=self.xrd_path,
