@@ -93,7 +93,7 @@ class GroupingOptionsWidget(QGroupBox):
         self.agg_column_combo = QComboBox()
         self.agg_column_combo.addItem("None")
         self.agg_func_combo = QComboBox()
-        self.agg_func_combo.addItems(["min", "max", "minmax"])
+        self.agg_func_combo.addItems(["None", "min", "max", "minmax"])
 
         layout.addWidget(QLabel("Group by:"))
         layout.addWidget(self.group_by_combo)
@@ -403,13 +403,15 @@ class MainWindow(QMainWindow):
             text = widget.text().strip()
             if text:
                 filter_params[cat] = text
-        # Similarly, define any standard parameters.
-        standard_params = {
-            "GroupBy": self.grouping_options.group_by_combo.currentText(),
-            "AggFunc": self.grouping_options.agg_func_combo.currentText()
-        }
+        if self.grouping_options.group_by_combo.currentText():
+            # Similarly, define any standard parameters.
+            grouping_params = {
+                "GroupBy": self.grouping_options.group_by_combo.currentText(),
+                "AggFunc": self.grouping_options.agg_func_combo.currentText(),
+                "AggBy": self.grouping_options.agg_column_combo.currentText()
+                                }
         self.current_plot_widget.set_filter_params(filter_params)
-        self.current_plot_widget.set_standard_params(standard_params)
+        self.current_plot_widget.set_grouping_params(grouping_params)
 
         if not df_lines.empty:
             self.current_plot_widget.add_vertical_lines(df_lines=df_lines)

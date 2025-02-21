@@ -27,12 +27,23 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         self.grouping_params = {}  # e.g., {"GroupBy": "cycle", "AggFunc": "max"}
         self.standard_params = {}
         self._init_ui()
+        self.name_mapping ={'nointerruptmes': 'Without interruption: ',
+                          'pressure': 'Pressure: ',
+                          'cycle': 'Cycle #',
+                          'numcurrentstep': 'Step temperature program: ',
+                          'currenttempstep': 'Measurements @program step: ',
+                          'gas' : "Gas: ",
+                          'temperature': 'Temperature: ',
+                          'GroupBy': 'Grouped by: ',
+                          'AggBy': 'Sorted in group by: ',
+                          'AggFunc': 'Shown each group: '
+                        }
 
     def _init_ui(self):
         """Set up the UI (plot area) of the widget."""
         self.setWindowTitle('Stacked XY Data')
         self.resize(800, 600)
-        self.plot_item = self.addPlot(title="Stacked XY Data")
+        self.plot_item = self.addPlot(title="Diffractograms")
         self.plot_item.setLabel('left', 'Y (offset applied)')
         self.plot_item.setLabel('bottom', 'X')
 
@@ -178,16 +189,17 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
 
     def _create_text_item_for_line(self):
         #todo: polish labeling
+
         custom_label = ""
         if self.standard_params:
-            filters_str = ", ".join([f"{k}: {v}" for k, v in self.standard_params.items()])
-            custom_label += f" | Filters: {filters_str}"
+            filters_str = [f"{self.name_mapping.get(k, k)}: {v}" for k, v in self.standard_params.items()]
+            custom_label += f" ,{filters_str}"
         if self.filter_params:
-            filters_str = ", ".join([f"{k}: {v}" for k, v in self.filter_params.items()])
-            custom_label += f" | Filters: {filters_str}"
+            filters_str = [f"{self.name_mapping.get(k, k)}: {v}" for k, v in self.filter_params.items()]
+            custom_label += f" ,{filters_str}"
         if self.grouping_params:
-            standard_str = ", ".join([f"{k}: {v}" for k, v in self.grouping_params.items()])
-            custom_label += f" | Params: {standard_str}"
+            standard_str = [f"{self.name_mapping.get(k, k)}: {v}" for k, v in self.grouping_params.items()]
+            custom_label += f" ,{standard_str}"
         # Final label combines the base label with extra parameters.
         return custom_label or None
 
