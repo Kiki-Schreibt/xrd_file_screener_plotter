@@ -85,7 +85,7 @@ class PTHParser:
         # Optionally extract a simplified name from metadata.
         if "STOE Peak File" in metadata:
             metadata['name'] = metadata['STOE Peak File'].partition('_')[0]
-            print(f"Parsed file name: {metadata['name']}")  # Consider using logging instead.
+            #print(f"Parsed file name: {metadata['name']}")  # Consider using logging instead.
 
         return PTHFileData(filename=filename, metadata=metadata, df=df, df_xy=df_xy)
 

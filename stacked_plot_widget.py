@@ -23,9 +23,9 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         super().__init__(parent)
         self.data_frame = data_frame
         self.vertical_offset = vertical_offset
-
+        self.filter_params = {}    # e.g., {"temperature": "285-305", "cycle": "0-20"}
+        self.standard_params = {}  # e.g., {"GroupBy": "cycle", "AggFunc": "max"}
         self._init_ui()
-        self._plot_stacked()
 
     def _init_ui(self):
         """Set up the UI (plot area) of the widget."""
@@ -35,7 +35,7 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         self.plot_item.setLabel('left', 'Y (offset applied)')
         self.plot_item.setLabel('bottom', 'X')
 
-    def _plot_stacked(self):
+    def plot_stacked(self):
         """Plot each XY dataset as a stacked curve in the plot_item."""
         if self.data_frame.empty:
             return
@@ -137,23 +137,32 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             label = " ".join(labels)
         return label
 
-    def _add_text_item_to_line(self, x, y, label, pen):
-        #todo: customize text to show next to line
+    def _add_text_item_to_line(self, x, y, base_label, pen):
+        # Build extra label text based on the stored parameters.
+        extra_label = ""
+        final_label = f"{base_label}"
+        #todo: polish labeling
+        if self.filter_params:
+            filters_str = ", ".join([f"{k}: {v}" for k, v in self.filter_params.items()])
+            extra_label += f" | Filters: {filters_str}"
+        if self.standard_params:
+            standard_str = ", ".join([f"{k}: {v}" for k, v in self.standard_params.items()])
+            extra_label += f" | Params: {standard_str}"
+        # Final label combines the base label with extra parameters.
+        if extra_label:
+            final_label = f"{extra_label}"
+
+        # Determine the position for the text item.
         x_pos = x[-1]
         y_pos = y[-1]
-
-        # Create a text item for the label.
-        # The 'anchor' parameter ensures the text is positioned relative to its bounding box.
-        text_item = pg.TextItem(text=label, anchor=(0, 1), color=pen.color())
-        # Offset the text slightly from the curve point (adjust offsets as needed).
+        text_item = pg.TextItem(text=final_label, anchor=(0, 1), color=pen.color())
         offset_x = x.max() * 0.02
         offset_y = 0
         text_item.setPos(x_pos + offset_x, y_pos + offset_y)
         self.plot_item.addItem(text_item)
-
-        # Option 1: Draw a line connecting the curve to the text.
-        # You can use plot_item.plot to draw a connecting line.
-        self.plot_item.plot([x_pos, x_pos + offset_x], [y_pos, y_pos + offset_y],
+        # Optionally draw a connecting dashed line.
+        self.plot_item.plot([x_pos, x_pos + offset_x],
+                            [y_pos, y_pos + offset_y],
                             pen=pg.mkPen(color=pen.color(), style=pg.QtCore.Qt.DashLine))
 
     def update_plot(self, new_data_frame):
@@ -162,7 +171,15 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         """
         self.data_frame = new_data_frame
         self.plot_item.clear()  # Clear current items and legend
-        self._plot_stacked()
+        self.plot_stacked()
+
+    def set_filter_params(self, params: dict):
+        self.filter_params = params
+
+    def set_standard_params(self, params: dict):
+        self.standard_params = params
+
+
 
 # ------------------------------
 # Example usage of StackedPlotWidget

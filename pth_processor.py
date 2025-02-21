@@ -1,7 +1,7 @@
 #pth_processor.py
 import os
 import pandas as pd
-from pks_manager import PTHParser, PTHFileData  # Assuming these classes are defined in pks_manager.py
+from pks_manager import PTHParser, PTHFileData  # Assuming these classes are' defined in pks_manager.py
 
 
 class PTHProcessor:

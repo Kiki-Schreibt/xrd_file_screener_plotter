@@ -1,3 +1,4 @@
+#gui.py
 import os
 import sys
 import pandas as pd
@@ -359,7 +360,7 @@ class MainWindow(QMainWindow):
             if pattern_text:
                 custom_pattern = pattern_text
 
-        vertical_offset = self.y_offset_spinbox.value()
+        vertical_offset = self.y_offset_layout.y_offset_spinbox.value()
         # Create backend instance
         self.backend = MainBackend(
             xrd_folder=self.xrd_path,
@@ -385,17 +386,36 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def onProcessingFinished(self, df_filtered, df_lines):
+
         self.current_df_filtered = df_filtered
-        # Clear any existing plot widget
+        # Clear any existing plot widget.
         while self.plot_layout.count():
             widget = self.plot_layout.takeAt(0).widget()
             if widget:
                 widget.setParent(None)
-        # Create the new plot widget with the updated vertical offset
-        self.current_plot_widget = StackedPlotWidget(self.current_df_filtered, vertical_offset=self.y_offset_spinbox.value())
+        # Create the new plot widget.
+        self.current_plot_widget = StackedPlotWidget(self.current_df_filtered,
+                                                     vertical_offset=self.y_offset_layout.y_offset_spinbox.value())
+        # Set the extra parameters from the GUI filters and any standard parameters.
+        filter_params = {}  # Construct a dict from your GUI filter widgets.
+        # For example, you could iterate through self.filter_widget.filter_inputs:
+        for cat, widget in self.filter_widget.filter_inputs.items():
+            text = widget.text().strip()
+            if text:
+                filter_params[cat] = text
+        # Similarly, define any standard parameters.
+        standard_params = {
+            "GroupBy": self.grouping_options.group_by_combo.currentText(),
+            "AggFunc": self.grouping_options.agg_func_combo.currentText()
+        }
+        self.current_plot_widget.set_filter_params(filter_params)
+        self.current_plot_widget.set_standard_params(standard_params)
+
         if not df_lines.empty:
             self.current_plot_widget.add_vertical_lines(df_lines=df_lines)
         self.plot_layout.addWidget(self.current_plot_widget)
+        self.current_plot_widget.plot_stacked()
+
 
     def on_pth_table_item_changed(self, item):
         if item.column() == 0:
@@ -443,7 +463,7 @@ class MainWindow(QMainWindow):
     def onYOffsetChanged(self):
         # Update the plot when y offset editing is finished
         if self.current_plot_widget:
-            new_offset = self.y_offset_spinbox.value()
+            new_offset = self.y_offset_layout.y_offset_spinbox.value()
             # If your StackedPlotWidget supports dynamic updating via a setter method, use it:
             if hasattr(self.current_plot_widget, 'set_vertical_offset'):
                 self.current_plot_widget.set_vertical_offset(new_offset)
