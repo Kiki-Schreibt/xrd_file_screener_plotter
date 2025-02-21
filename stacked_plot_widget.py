@@ -24,7 +24,8 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         self.data_frame = data_frame
         self.vertical_offset = vertical_offset
         self.filter_params = {}    # e.g., {"temperature": "285-305", "cycle": "0-20"}
-        self.standard_params = {}  # e.g., {"GroupBy": "cycle", "AggFunc": "max"}
+        self.grouping_params = {}  # e.g., {"GroupBy": "cycle", "AggFunc": "max"}
+        self.standard_params = {}
         self._init_ui()
 
     def _init_ui(self):
@@ -139,18 +140,11 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
 
     def _add_text_item_to_line(self, x, y, base_label, pen):
         # Build extra label text based on the stored parameters.
-        extra_label = ""
+
         final_label = f"{base_label}"
-        #todo: polish labeling
-        if self.filter_params:
-            filters_str = ", ".join([f"{k}: {v}" for k, v in self.filter_params.items()])
-            extra_label += f" | Filters: {filters_str}"
-        if self.standard_params:
-            standard_str = ", ".join([f"{k}: {v}" for k, v in self.standard_params.items()])
-            extra_label += f" | Params: {standard_str}"
-        # Final label combines the base label with extra parameters.
-        if extra_label:
-            final_label = f"{extra_label}"
+        custom_label = self._create_text_item_for_line()
+        if custom_label:
+            final_label = f"{custom_label}"
 
         # Determine the position for the text item.
         x_pos = x[-1]
@@ -176,9 +170,26 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
     def set_filter_params(self, params: dict):
         self.filter_params = params
 
-    def set_standard_params(self, params: dict):
-        self.standard_params = params
+    def set_grouping_params(self, params: dict):
+        self.grouping_params = params
 
+    def set_standard_params(self, params: dict):
+        self.standard_paramsparams = params
+
+    def _create_text_item_for_line(self):
+        #todo: polish labeling
+        custom_label = ""
+        if self.standard_params:
+            filters_str = ", ".join([f"{k}: {v}" for k, v in self.standard_params.items()])
+            custom_label += f" | Filters: {filters_str}"
+        if self.filter_params:
+            filters_str = ", ".join([f"{k}: {v}" for k, v in self.filter_params.items()])
+            custom_label += f" | Filters: {filters_str}"
+        if self.grouping_params:
+            standard_str = ", ".join([f"{k}: {v}" for k, v in self.grouping_params.items()])
+            custom_label += f" | Params: {standard_str}"
+        # Final label combines the base label with extra parameters.
+        return custom_label or None
 
 
 # ------------------------------
