@@ -418,7 +418,6 @@ class MainWindow(QMainWindow):
         self.plot_layout.addWidget(self.current_plot_widget)
         self.current_plot_widget.plot_stacked()
 
-
     def on_pth_table_item_changed(self, item):
         if item.column() == 0:
             self.update_vertical_lines()
