@@ -5,7 +5,6 @@ from pyqtgraph.Qt import QtWidgets, QtCore
 
 from xrd_file_screener import DataScreener
 
-
 class StackedPlotWidget(pg.GraphicsLayoutWidget):
     """
     A widget that displays a stacked plot of XY data from a given DataFrame.
@@ -44,8 +43,8 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         self.setWindowTitle('Stacked XY Data')
         self.resize(800, 600)
         self.plot_item = self.addPlot(title="Diffractograms")
-        self.plot_item.setLabel('left', 'Y (offset applied)')
-        self.plot_item.setLabel('bottom', 'X')
+        self.plot_item.setLabel('left', 'Intensity (a.u.)')
+        self.plot_item.setLabel('bottom', '2 Theta (°)')
 
     def plot_stacked(self):
         """Plot each XY dataset as a stacked curve in the plot_item."""
