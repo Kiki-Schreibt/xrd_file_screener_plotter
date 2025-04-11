@@ -115,6 +115,11 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             # Create a dummy plot item to add to the legend.
             dummy_item = pg.PlotDataItem([0], [0], pen=pen)
             self.vertical_legend.addItem(dummy_item, legend_label)
+        #todo: does not affect legend font....
+        custom_font = QtGui.QFont("Arial", 16)  # Change "Arial" and 16 to your desired font and size.
+        for sample, label in self.vertical_legend.items:
+            label.setFont(custom_font)
+
 
     def add_vertical_lines_from_struct(self, lines_by_legend):
         """
