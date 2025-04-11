@@ -1,7 +1,7 @@
 #stacked_plot_widget.py
 import pandas as pd
 import pyqtgraph as pg
-from pyqtgraph.Qt import QtWidgets, QtCore
+from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
 
 from xrd_file_screener import DataScreener
 
@@ -43,8 +43,25 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         self.setWindowTitle('Stacked XY Data')
         self.resize(800, 600)
         self.plot_item = self.addPlot(title="Diffractograms")
+
+
+        font = QtGui.QFont("Arial", 16)
+
+
         self.plot_item.setLabel('left', 'Intensity (a.u.)')
         self.plot_item.setLabel('bottom', '2 Theta (°)')
+
+        # Create a QFont for tick labels
+        tick_font = QtGui.QFont("Arial", 14)  # Change font type and size as desired
+
+        # Update the left and bottom axis tick fonts.
+        left_axis = self.plot_item.getAxis('left')
+        bottom_axis = self.plot_item.getAxis('bottom')
+        left_axis.setStyle(tickFont=tick_font)
+        bottom_axis.setStyle(tickFont=tick_font)
+        left_axis.label.setFont(font)
+        bottom_axis.label.setFont(font)
+
 
     def plot_stacked(self):
         """Plot each XY dataset as a stacked curve in the plot_item."""
@@ -151,6 +168,7 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
     def _add_text_item_to_line(self, x, y, base_label, pen):
         # Build extra label text based on the stored parameters.
 
+
         final_label = f"{base_label}"
         custom_label = self._create_text_item_for_line()
         if custom_label:
@@ -162,6 +180,8 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         text_item = pg.TextItem(text=final_label, anchor=(0, 1), color=pen.color())
         offset_x = x.max() * 0.02
         offset_y = 0
+        custom_font = QtGui.QFont("Arial", 12)
+        text_item.setFont(custom_font)  # Apply the custom font here.
         text_item.setPos(x_pos + offset_x, y_pos + offset_y)
         self.plot_item.addItem(text_item)
         # Optionally draw a connecting dashed line.

@@ -464,7 +464,7 @@ class MainWindow(QMainWindow):
     def onYOffsetChanged(self):
         # Update the plot when y offset editing is finished
         if self.current_plot_widget:
-            new_offset = self.y_offset_layout.y_offset_spinbox.value()
+            new_offset = int(self.y_offset_layout.y_offset_spinbox.value())
             # If your StackedPlotWidget supports dynamic updating via a setter method, use it:
             if hasattr(self.current_plot_widget, 'set_vertical_offset'):
                 self.current_plot_widget.set_vertical_offset(new_offset)
