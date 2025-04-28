@@ -16,6 +16,7 @@ from main_backend import MainBackend
 from xrd_file_screener import DataScreener
 from stacked_plot_widget import StackedPlotWidget
 
+
 # ----------------------------------------------------------------------
 # Worker thread class using QThread and signals for data processing
 # ----------------------------------------------------------------------
@@ -45,6 +46,7 @@ class DataProcessingWorker(QThread):
             )
         # Emit the processed data to be used by the GUI thread
         self.processingFinished.emit(df_filtered, df_lines)
+
 
 # ----------------------------
 # Panel Classes (each a QGroupBox)
@@ -184,6 +186,7 @@ class YOffsetSpinningBox(QGroupBox):
         layout.addWidget(self.y_offset_label)
         layout.addWidget(self.y_offset_spinbox)
 
+
 # ----------------------------
 # MainWindow that composes the panels
 # ----------------------------
@@ -238,6 +241,9 @@ class MainWindow(QMainWindow):
         self.process_button = QPushButton("Process and Plot")
         control_layout.addWidget(self.process_button)
 
+        self.origin_button = QPushButton("Send to Origin")
+        control_layout.addWidget(self.origin_button)
+
         # Right panel: Plot area
         self.plot_container = QWidget()
         self.plot_layout = QVBoxLayout(self.plot_container)
@@ -251,6 +257,7 @@ class MainWindow(QMainWindow):
         self.data_selection.xrd_select_button.clicked.connect(self.select_xrd_data)
         self.data_selection.pth_select_button.clicked.connect(self.select_pth_data)
         self.process_button.clicked.connect(self.process_and_plot)
+        self.origin_button.clicked.connect(self.send_to_origin)
         # Connect y offset editingFinished signal for live update
         self.y_offset_layout.y_offset_spinbox.editingFinished.connect(self.onYOffsetChanged)
         # Connect change events from the PTH table
@@ -478,6 +485,36 @@ class MainWindow(QMainWindow):
                 self.current_plot_widget = StackedPlotWidget(df_filtered, vertical_offset=new_offset)
                 self.plot_layout.addWidget(self.current_plot_widget)
             self.update_vertical_lines()
+
+    def send_to_origin(self):
+        self.open_origin_and_new_sheet()
+
+    def open_origin_and_new_sheet(self):
+        """
+        Simple Origin smoke‐test: attach (if already running), show Origin,
+        and create a new empty worksheet.
+        """
+        try:
+            import originpro as op
+        except ImportError:
+            QMessageBox.critical(self, "Origin Error",
+                "Could not import originpro—make sure it’s installed and that you’re on Windows with Origin 2021+.")
+            return
+
+        try:
+            # If Origin’s COM server is already running, attach to it:
+            if getattr(op, "oext", False):
+                op.attach()
+            # Make sure the Origin window is visible:
+            op.set_show(True)
+
+            # Create a new worksheet:
+            wks = op.new_sheet()
+
+
+        except Exception as e:
+            QMessageBox.critical(self, "Origin Error",
+                f"Failed to open Origin or create sheet:\n{e}")
 
 
 if __name__ == '__main__':
