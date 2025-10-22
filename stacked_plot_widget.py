@@ -209,7 +209,7 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         self.grouping_params = params
 
     def set_standard_params(self, params: dict):
-        self.standard_paramsparams = params
+        self.standard_params = params
 
     def _create_text_item_for_line(self):
         #todo: polish labeling

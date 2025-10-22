@@ -487,34 +487,208 @@ class MainWindow(QMainWindow):
             self.update_vertical_lines()
 
     def send_to_origin(self):
-        self.open_origin_and_new_sheet()
-
-    def open_origin_and_new_sheet(self):
         """
-        Simple Origin smoke‐test: attach (if already running), show Origin,
-        and create a new empty worksheet.
+        Send the currently visible stacked plot to Origin using originpro.
+        Builds X/Y column pairs, assigns designations, creates a graph, and adds optional vertical lines.
         """
-        try:
-            import originpro as op
-        except ImportError:
+        if sys.platform != "win32":
             QMessageBox.critical(self, "Origin Error",
-                "Could not import originpro—make sure it’s installed and that you’re on Windows with Origin 2021+.")
+                                 "Origin (originpro) automation is only available on Windows.")
+            return
+        if self.current_plot_widget is None or self.current_df_filtered is None or self.current_df_filtered.empty:
+            QMessageBox.warning(self, "No Data", "There is no plotted data to send.")
             return
 
         try:
-            # If Origin’s COM server is already running, attach to it:
-            if getattr(op, "oext", False):
-                op.attach()
-            # Make sure the Origin window is visible:
-            op.set_show(True)
-
-            # Create a new worksheet:
-            wks = op.new_sheet()
-
-
+            import originpro as op
         except Exception as e:
             QMessageBox.critical(self, "Origin Error",
-                f"Failed to open Origin or create sheet:\n{e}")
+                                 "Could not import originpro. Make sure Origin 2021+ is installed and "
+                                 "the originpro package is available.\n\n"
+                                 f"Details: {e}")
+            return
+
+        try:
+            if getattr(op, "oext", False):
+                op.attach()
+            op.set_show(True)
+        except Exception as e:
+            QMessageBox.critical(self, "Origin Error", f"Failed to attach/show Origin:\n{e}")
+            return
+
+        try:
+            # 1) New worksheet
+            wks = op.new_sheet('w')
+            wks.name = "Stacked_XRD"
+
+            df = self.current_df_filtered
+            vertical_offset = int(self.y_offset_layout.y_offset_spinbox.value())
+
+            # Collect valid curves first
+            curves = []
+            for idx, row in df.iterrows():
+                xy_df = row.get('df_xy')
+                if xy_df is not None and not xy_df.empty and {'X', 'Y'}.issubset(xy_df.columns):
+                    curves.append((idx, row))
+
+            if not curves:
+                QMessageBox.warning(self, "No Data", "No valid XY arrays found to send.")
+                return
+
+            # Pre-size: two columns per curve
+            wks.cols = 2 * len(curves)
+
+            # Fill columns + labels + designations
+            y_min, y_max = None, None
+            col = 0
+            for cnum, (idx, row) in enumerate(curves, start=1):
+                xy = row['df_xy']
+                x = xy['X'].values
+                y = xy['Y'].values + idx * vertical_offset
+
+                y_min = float(y.min()) if y_min is None else min(y_min, float(y.min()))
+                y_max = float(y.max()) if y_max is None else max(y_max, float(y.max()))
+
+                # Data + Long Names
+                x_lname = f"X_{cnum}"
+                y_lname = (self.current_plot_widget._create_xy_label(row) or f"Curve_{cnum}")[:250]
+
+                wks.from_list(col,     x, lname=x_lname)
+                wks.from_list(col + 1, y, lname=y_lname)
+
+                # (Optional) explicitly set long names (redundant if passed in from_list but kept for clarity)
+                wks.set_label(col,     x_lname, type='L')
+                wks.set_label(col + 1, y_lname, type='L')
+
+                # Designations: set this pair as X then Y
+                wks.cols_axis('xy', c1=col, c2=col + 1, repeat=False)
+
+                col += 2
+
+            # 2) Create graph and plot each Y vs its preceding X
+            gp = op.new_graph()
+            gp.name = "Stacked_XRD_Graph"
+            gl = gp[0]
+
+            for y_col in range(1, wks.cols, 2):
+                x_col = y_col - 1
+                gl.add_plot(wks, coly=y_col, colx=x_col)
+            gl.group()
+            gl.rescale()
+
+            # 3) Optional: draw vertical PTH lines using the layer API
+            vlines = self._collect_current_pth_lines() if hasattr(self, "_collect_current_pth_lines") else {}
+            if vlines and y_min is not None and y_max is not None:
+                pad = max(1e-6, 0.02 * (y_max - y_min))
+                y0, y1 = y_min - pad, y_max + pad
+
+                # Color cycle (RGB)
+                palette = [
+                    (31, 119, 180), (255, 127, 14), (44, 160, 44), (214, 39, 40),
+                    (148, 103, 189), (140, 86, 75), (227, 119, 194), (127, 127, 127),
+                    (188, 189, 34), (23, 190, 207),
+                ]
+
+                # Create a single worksheet for ALL phase lines
+                wks_phases = op.new_sheet('w')
+                wks_phases.name = "Phase_Lines"
+
+                phase_items = list(vlines.items())
+                wks_phases.cols = 2 * len(phase_items)  # X/Y per phase
+
+                # Fill the sheet: for each phase create [xv, xv, NaN] / [y0, y1, NaN] blocks
+                for gi, (phase_name, xvals) in enumerate(phase_items):
+                    xs, ys = [], []
+                    for xv in xvals:
+                        xs.extend([xv, xv, float('nan')])
+                        ys.extend([y0, y1, float('nan')])
+
+                    base = 2 * gi
+                    pname = str(phase_name)[:250]
+                    # Data + labels
+                    wks_phases.from_list(base,     xs, lname=f"X_{pname}")
+                    wks_phases.from_list(base + 1, ys, lname=f"Y_{pname}")
+                    wks_phases.set_label(base,     f"X_{pname}", type='L')
+                    wks_phases.set_label(base + 1, f"Y_{pname}", type='L')
+                    # Designation for this pair
+                    wks_phases.cols_axis('xy', c1=base, c2=base + 1, repeat=False)
+
+                # Add each phase’s XY pair to the SAME graph/layer, style per-phase color
+                gl = gp[0]
+                for gi, (phase_name, _) in enumerate(phase_items):
+                    base = 2 * gi
+                    crv = gl.add_plot(wks_phases, coly=base + 1, colx=base)
+                    # Style: color per phase, dashed, width 2, no symbols
+                    r, g, b = palette[gi % len(palette)]
+                    try:
+                        # If Curve properties are available in your originpro build
+                        crv.color = (r, g, b)
+                        crv.style = 1      # line
+                        crv.linetype = 1   # dashed
+                        crv.symbol = 0     # none
+                        crv.width = 2
+                    except Exception:
+                        # Fallback via LabTalk for styling the last added curve (%C)
+                        op.lt_exec(f"set %C -cf {r} {g} {b};")
+                        op.lt_exec("set %C -k 0;")  # no symbol
+                        op.lt_exec("set %C -d 1;")  # dashed
+                        op.lt_exec("set %C -w 2;")  # width
+
+                gl.rescale()
+
+            QMessageBox.information(self, "Done", "Sent the stacked plot to Origin.")
+        except Exception as e:
+            QMessageBox.critical(self, "Origin Error",
+                                 f"Failed to send data to Origin:\n{e}")
+
+    def _collect_current_pth_lines(self):
+        """
+        Build a dict {legend_label: [x1, x2, ...]} for currently checked PTH rows,
+        using the backend’s processing (thresholds + max counts taken from the table).
+        Returns {} if none selected or processing fails.
+        """
+        try:
+            if not self.backend:
+                return {}
+
+            table = self.pth_instances.table_widget
+            selected_files, thresholds, max_counts = [], {}, {}
+            for row in range(table.rowCount()):
+                include_item = table.item(row, 0)
+                if include_item and include_item.checkState() == Qt.Checked:
+                    filename = table.item(row, 1).text()
+                    try:
+                        thresh = int(table.item(row, 2).text())
+                    except Exception:
+                        thresh = 0
+                    try:
+                        maxc = int(table.item(row, 3).text())
+                    except Exception:
+                        maxc = 5
+                    selected_files.append(filename)
+                    thresholds[filename] = thresh
+                    max_counts[filename] = maxc
+
+            if not selected_files:
+                return {}
+
+            df_lines = self.backend.process_pth_data(
+                criteria={"filename": selected_files},
+                thresholds=thresholds,
+                max_counts=max_counts
+            )
+            if df_lines is None or df_lines.empty:
+                return {}
+
+            # Convert DF columns -> list of floats (drop NaN)
+            result = {}
+            for col in df_lines.columns:
+                xs = [float(v) for v in df_lines[col].dropna().tolist()]
+                if xs:
+                    result[col] = xs
+            return result
+        except Exception:
+            return {}
 
 
 if __name__ == '__main__':
