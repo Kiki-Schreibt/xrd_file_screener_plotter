@@ -11,109 +11,129 @@ from xy_manager import XYFileReader
 # Category Extractor Base and Classes
 # ----------------------------------
 
-class BaseCategoryExtractor:
-    """
-    Base interface for a category extractor.
-    Implementations should extract categories from a file (e.g. from the filename)
-    and return a dictionary of {category_name: value}.
-    """
-    def extract(self, filename: str, manager) -> dict:
-        raise NotImplementedError("Must implement extract method.")
+import os
+import re
+import pandas as pd
+import datetime
+from pathlib import Path
+from rasx_manager import RasxDataManager
+from xy_manager import XYFileReader
 
+# ---------------- Category Extractors ---------------- #
+
+class BaseCategoryExtractor:
+    def extract(self, filename: str, manager) -> dict:
+        raise NotImplementedError
     def get_categories(self) -> list:
-        raise NotImplementedError("Must implement get_categories method.")
+        raise NotImplementedError
 
 
 class FilenameCategoryExtractor(BaseCategoryExtractor):
     """
-    Dynamically extracts categories from the filename using a regex pattern.
-    The regex's named groups determine the keys.
-    Optionally, a conversion mapping is provided.
+    Flexible, token-aware extractor.
     """
+    TOKENS = {
+        "gas":              (r"(?P<gas>[A-Za-z0-9]+)", str),
+        "pressure":         (r"(?P<pressure>\d+(?:\.\d+)?)", float),
+        "cycle":            (r"(?P<cycle>\d+)", int),
+        "numcurrentstep":   (r"(?P<numcurrentstep>\d+)", int),
+        "currenttempstep":  (r"(?P<currenttempstep>\d+)", int),
+        "nointerruptmes":   (r"(?P<nointerruptmes>\d+)", int),
+        "temperature":      (r"(?P<temperature>\d+(?:\.\d+)?)", float),
+    }
+
     def __init__(self, pattern: str = None, conversion_mapping: dict = None):
-        # Default regex pattern if none is provided.
+        # ✅ Default now includes optional " C<cycle>" before the trailing tokens
         self.default_pattern = (
-            r"(?P<gas>[A-Z](?:[a-z])?\d*)\s*,\s+"
-            r"(?P<pressure>\d+(?:\.\d+)?)bar"
-            r"(?:\s+C(?P<cycle>\d+))?"
-            r"(?:.*?_)"                                         
-            r"(?P<numcurrentstep>\d+)_"                                  
-            r"(?P<currenttempstep>\d+)_"                             
-            r"(?P<nointerruptmes>\d+)_"                                
+            r"(?P<gas>[A-Za-z0-9]+)\s*,\s*(?P<pressure>\d+(?:\.\d+)?)bar"
+            r"(?:\s*C(?P<cycle>\d+))?"                     # <-- optional cycle like " C17"
+            r".*?_"                                       
+            r"(?P<numcurrentstep>\d+)_(?P<currenttempstep>\d+)_(?P<nointerruptmes>\d+)_"
             r"(?P<temperature>\d+)-0C$"
         )
-        self.pattern = pattern or self.default_pattern
-        self.compiled_pattern = re.compile(self.pattern)
-        self.categories = list(self.compiled_pattern.groupindex.keys())
-        self.conversion_mapping = conversion_mapping or {
-            'pressure': float,
-            'cycle': int,
-            'numcurrentstep': int,
-            'currenttempstep': int,
-            'nointerruptmes': int,
-            'temperature': float,
-        }
+        self.update_pattern(pattern or self.default_pattern, conversion_mapping)
+
+    @classmethod
+    def from_tokens(cls, tokens: list[str], sep: str = r"[\s,_-]+", suffix: str = r"$"):
+        parts, conv = [], {}
+        for t in tokens:
+            if t not in cls.TOKENS:
+                raise ValueError(f"Unknown token: {t}")
+            rx, caster = cls.TOKENS[t]
+            parts.append(rx)
+            name = re.search(r"\?P<([^>]+)>", rx).group(1)
+            conv[name] = caster
+        pattern = (sep.join(parts)) + suffix
+        return cls(pattern=pattern, conversion_mapping=conv)
 
     def update_pattern(self, new_pattern: str, conversion_mapping: dict = None):
-        """Update the regex pattern and optionally the conversion mapping."""
         self.pattern = new_pattern
         self.compiled_pattern = re.compile(new_pattern)
         self.categories = list(self.compiled_pattern.groupindex.keys())
         if conversion_mapping is not None:
             self.conversion_mapping = conversion_mapping
+        else:
+            self.conversion_mapping = {
+                'pressure': float, 'cycle': int,
+                'numcurrentstep': int, 'currenttempstep': int,
+                'nointerruptmes': int, 'temperature': float,
+            }
 
     def extract(self, filename: str, manager=None) -> dict:
         filename_clean, _ = os.path.splitext(filename)
-        match = self.compiled_pattern.search(filename_clean)
-        if match:
-            raw_data = match.groupdict()
-            result = {}
-            for key, value in raw_data.items():
-                if key in self.conversion_mapping and value is not None:
-                    try:
-                        result[key] = self.conversion_mapping[key](value)
-                    except Exception:
-                        result[key] = None
-                elif 'cycle' in key:
-                    try:
-                        result[key] = self.conversion_mapping[key](value)
-                    except Exception:
-                        result[key] = 1
-                else:
-                    result[key] = value
-            return result
-        else:
-            # If no match, return dictionary with all keys set to None.
-            return {key: None for key in self.categories}
+        m = self.compiled_pattern.search(filename_clean)
+        if not m:
+            return {k: None for k in self.categories}
+        raw = m.groupdict()
+        out = {}
+        for k, v in raw.items():
+            if v is None:
+                out[k] = None; continue
+            caster = self.conversion_mapping.get(k)
+            if caster:
+                try: out[k] = caster(v)
+                except Exception: out[k] = None
+            else:
+                out[k] = v
+        return out
 
     def get_categories(self) -> list:
-        return self.categories
+        return list(self.categories)
 
 
-# ----------------------------------
-# DataScreener: File Scanning and Categorization
-# ----------------------------------
+class CycleExtractor(BaseCategoryExtractor):
+    """
+    Supplemental extractor that finds 'C<digits>' anywhere in the basename,
+    e.g. '... C17 ...' → cycle=17. It ensures 'cycle' is always available
+    even when a custom pattern omitted it.
+    """
+    _rx = re.compile(r'(?<![A-Za-z])C(?P<cycle>\d+)(?!\d)')
+
+    def extract(self, filename: str, manager=None) -> dict:
+        name_no_ext = os.path.splitext(filename)[0]
+        m = self._rx.search(name_no_ext)
+        if not m:
+            return {}  # <-- IMPORTANT: do not set {'cycle': None}; that would override earlier values
+        try:
+            return {'cycle': int(m.group('cycle'))}
+        except Exception:
+            return {}
+
+    def get_categories(self) -> list:
+        return ['cycle']
+
+# ---------------- Data Screener ---------------- #
 
 class DataScreener:
     """
-    Reads and categorizes files (either .rasx or .xy) based on filename (and optionally content)
-    and stores the collected data into a Pandas DataFrame.
-
-    If the source is a folder, the DataScreener scans the folder.
-    If the source is a file (ending with .pkl or .csv), it loads the DataFrame.
+    Scans .rasx/.xy files or loads a saved dataframe (.pkl/.csv),
+    annotates rows with categories from one or more extractors,
+    and offers powerful filters + optional group/aggregate selection.
     """
     def __init__(self, source: str, category_extractors: list = None):
-        """
-        If source is a folder, the DataScreener will scan the folder.
-        If source is a file ending with .pkl or .csv, it will load the DataFrame.
-        """
         self.source = source
-        self.df = None  # DataFrame storing the categorized data
-
-        # Register category extractors (default is FilenameCategoryExtractor).
+        self.df = None
         self.category_extractors = category_extractors or [FilenameCategoryExtractor()]
-
-        # Determine mode: folder scanning vs. file loading.
         if os.path.isdir(source):
             self.mode = "folder"
         elif os.path.isfile(source) and source.lower().endswith((".pkl", ".csv")):
@@ -122,42 +142,39 @@ class DataScreener:
             raise ValueError("Source must be a directory or a .pkl/.csv file.")
 
     def load(self):
-        """
-        Main entry: either read files from a directory or load an existing DataFrame.
-        """
         if self.mode == "folder":
             self.read_files()
-        elif self.mode == "file":
+        else:
             self.load_from_file(self.source)
 
     def read_files(self):
         records_rasx = self._get_rasx_files_from_directory()
         records_xy = self._get_xy_files_from_directory()
 
-        # Get base filenames (without extension) from the .rasx files.
         rasx_basenames = {os.path.splitext(rec["filename"])[0] for rec in records_rasx}
+        filtered_records_xy = [rec for rec in records_xy
+                               if os.path.splitext(rec["filename"])[0] not in rasx_basenames]
 
-        # Filter out .xy records that have a duplicate base filename.
-        filtered_records_xy = [
-            rec for rec in records_xy
-            if os.path.splitext(rec["filename"])[0] not in rasx_basenames
-        ]
-
-        # Merge the records, keeping .rasx records in case of duplicates.
         records = records_rasx + filtered_records_xy
         self.df = self._create_dataframe(records)
+        self._normalize_df()
         print("Files read and categorized successfully.")
 
     def save_to_file(self, filename="categorized_data.pkl"):
-        """Saves the DataFrame to a file (Pickle or CSV)."""
+        """Save the DataFrame to a file. If filename is an absolute path, respect it."""
         if self.df is None:
             print("No data to save. Run load() or read_files() first.")
             return
 
-        file_save_path = os.path.join(os.path.dirname(self.source), filename)
-        if filename.endswith(".pkl"):
+        if os.path.isabs(filename):
+            file_save_path = filename
+        else:
+            base_dir = self.source if os.path.isdir(self.source) else os.path.dirname(self.source)
+            file_save_path = os.path.join(base_dir, filename)
+
+        if file_save_path.lower().endswith(".pkl"):
             self.df.to_pickle(file_save_path)
-        elif filename.endswith(".csv"):
+        elif file_save_path.lower().endswith(".csv"):
             self.df.to_csv(file_save_path, index=False)
         else:
             print("Unsupported file format. Use .pkl or .csv")
@@ -166,96 +183,109 @@ class DataScreener:
         print(f"Data saved to {file_save_path}.")
 
     def load_from_file(self, filepath):
-        """Loads the DataFrame from a saved file (pkl or csv)."""
+        """Load a DataFrame from pkl/csv. If not a DataFrame, leave empty."""
         if not os.path.exists(filepath):
             print(f"File {filepath} not found.")
+            self.df = pd.DataFrame()
             return
 
-        if filepath.lower().endswith(".pkl"):
-            self.df = pd.read_pickle(filepath)
-        elif filepath.lower().endswith(".csv"):
-            self.df = pd.read_csv(filepath)
-        else:
-            print("Unsupported file format. Use .pkl or .csv")
+        try:
+            if filepath.lower().endswith(".pkl"):
+                obj = pd.read_pickle(filepath)
+            elif filepath.lower().endswith(".csv"):
+                obj = pd.read_csv(filepath)
+            else:
+                print("Unsupported file format. Use .pkl or .csv")
+                self.df = pd.DataFrame()
+                return
+        except Exception as e:
+            print(f"Failed to read {filepath}: {e}")
+            self.df = pd.DataFrame()
             return
+
+        if isinstance(obj, pd.DataFrame):
+            self.df = obj
+            self._normalize_df()
+        else:
+            print(f"Loaded object is not a DataFrame (type={type(obj).__name__}).")
+            self.df = pd.DataFrame()
 
         print(f"Data loaded from {filepath}.")
 
     def filter_by_categories(self, group_by=None, agg_by=None, **criteria):
         """
-        Filters the DataFrame based on specific category columns.
-        If a filter value is None, it is ignored.
-        Optionally group by a column and then select the row with the min/max
-        value of a given aggregation column.
-
-        Parameters:
-          group_by: Column name to group by.
-          agg_by: Tuple (aggregation_column, 'min' or 'max').
-
-        Returns:
-          Filtered DataFrame.
+        Powerful, type-aware filtering:
+          - range: (min, max) or [min, max]
+          - membership: list/set/tuple
+          - callable: lambda row_value -> bool
+          - regex: compiled re.Pattern
+          - scalar equality
         """
         if self.df is None:
             print("No data available. Run load() or read_files() first.")
             return pd.DataFrame()
 
-        filtered_df = self.df.copy()
-        for col, crit_val in criteria.items():
-            if crit_val is None:
+        df = self.df
+        for col, crit in criteria.items():
+            if crit is None or col not in df.columns:
                 continue
-            if col in filtered_df.columns:
-                if isinstance(crit_val, (tuple, list)) and len(crit_val) == 2:
-                    min_val, max_val = crit_val
-                    filtered_df = filtered_df[(filtered_df[col] >= min_val) & (filtered_df[col] <= max_val)]
-                else:
-                    filtered_df = filtered_df[filtered_df[col] == crit_val]
+            s = df[col]
+            if callable(crit):
+                df = df[s.apply(crit)]
+            elif isinstance(crit, (tuple, list)) and len(crit) == 2:
+                lo, hi = crit
+                df = df[(s >= lo) & (s <= hi)]
+            elif isinstance(crit, (list, set, tuple)):
+                df = df[s.isin(crit)]
+            elif hasattr(crit, "pattern"):  # compiled regex
+                df = df[s.astype(str).str.contains(crit)]
             else:
-                print(f"Column {col} not found in the DataFrame. Skipping.")
+                df = df[s == crit]
 
-        filtered_df = self._group_agg_by(group_by=group_by, agg_by=agg_by, df=filtered_df)
-        return filtered_df.reset_index(drop=True)
+        df = self._group_agg_by(group_by=group_by, agg_by=agg_by, df=df)
+        return df.reset_index(drop=True)
 
     def _group_agg_by(self, group_by, agg_by, df):
-        if group_by and agg_by:
-            agg_column, agg_func = agg_by
-            if group_by not in df.columns:
-                print(f"Group by column '{group_by}' not found. Skipping grouping.")
-                return df
-            elif agg_column not in df.columns:
-                print(f"Aggregation column '{agg_column}' not found. Skipping grouping.")
-                return df
-            else:
-                if agg_func.lower() == 'max':
-                    idx = df.groupby(group_by)[agg_column].idxmax()
-                elif agg_func.lower() == 'min':
-                    idx = df.groupby(group_by)[agg_column].idxmin()
-                elif agg_func.lower() == 'minmax':
-                    idx_min = df.groupby(group_by)[agg_column].idxmin()
-                    idx_max = df.groupby(group_by)[agg_column].idxmax()
-                    idx = pd.concat([idx_min, idx_max]).sort_index()
-                else:
-                    print("agg_by function must be 'min' or 'max'. Skipping grouping.")
-                    return df
-                return df.loc[idx].reset_index(drop=True)
+        if not (group_by and agg_by):
+            return df
+        agg_column, agg_func = agg_by
+        if group_by not in df.columns:
+            print(f"Group by column '{group_by}' not found. Skipping grouping.")
+            return df
+        if agg_column not in df.columns:
+            print(f"Aggregation column '{agg_column}' not found. Skipping grouping.")
+            return df
+
+        if str(agg_func).lower() == 'max':
+            idx = df.groupby(group_by)[agg_column].idxmax()
+            return df.loc[idx].reset_index(drop=True)
+        elif str(agg_func).lower() == 'min':
+            idx = df.groupby(group_by)[agg_column].idxmin()
+            return df.loc[idx].reset_index(drop=True)
+        elif str(agg_func).lower() == 'minmax':
+            idx_min = df.groupby(group_by)[agg_column].idxmin()
+            idx_max = df.groupby(group_by)[agg_column].idxmax()
+            idx = pd.concat([idx_min, idx_max]).sort_index()
+            return df.loc[idx].reset_index(drop=True)
         else:
+            print("agg_by function must be 'min', 'max', or 'minmax'. Skipping grouping.")
             return df
 
     def get_available_categories(self):
-        """
-        Returns a list of category names available from all registered extractors.
-        """
-        categories = set()
+        cats = set()
         for extractor in self.category_extractors:
-            categories.update(extractor.get_categories())
-        return list(categories)
+            cats.update(extractor.get_categories())
+        return list(cats)
 
-    # --- Helper methods for file scanning --- #
+    def list_category_values(self, cat, top_k=None):
+        if self.df is None or cat not in self.df.columns:
+            return []
+        vals = self.df[cat].dropna().unique().tolist()
+        return vals[:top_k] if top_k else vals
+
+    # ---- helpers for reading files ---- #
 
     def _get_rasx_files_from_directory(self):
-        """
-        Walks the directory, reads .rasx files (ignoring those with 'temp' in the filename),
-        extracts file-level data, and returns a list of dictionaries.
-        """
         records = []
         for root_dir, _, files in os.walk(self.source):
             for file in files:
@@ -267,33 +297,35 @@ class DataScreener:
                         print(f"Error reading {file_path}: {e}")
                         continue
 
+                    from datetime import datetime as _dt
                     file_path_obj = Path(file_path)
                     try:
                         creation_date = rasx_manager.start_time
                     except Exception:
                         creation_ts = file_path_obj.stat().st_mtime
-                        creation_date = datetime.datetime.fromtimestamp(creation_ts)
+                        creation_date = _dt.fromtimestamp(creation_ts)
 
                     record = {
                         "filename": file,
                         "creation_date": creation_date,
                         "start_time": rasx_manager.start_time,
-                        "df_xy": rasx_manager.df_xy
+                        "df_xy": rasx_manager.df_xy  # 'X','Y'
                     }
+                    # apply extractors in order; later ones may overwrite same keys
                     for extractor in self.category_extractors:
-                        record.update(extractor.extract(file, rasx_manager))
+                        upd = extractor.extract(file, rasx_manager)  # or None for xy manager
+                        # Prefer non-None values; do not overwrite existing non-None with None
+                        for k, v in upd.items():
+                            if v is not None or k not in record:
+                                record[k] = v
+
+                    # Default: if cycle is missing or None, treat as cycle=1
+                    if 'cycle' not in record or record['cycle'] is None:
+                        record['cycle'] = 1
                     records.append(record)
         return records
 
     def _get_xy_files_from_directory(self):
-        """
-        Walks the directory, reads .xy files (ignoring those with 'temp' in the filename),
-        and creates a record dictionary.
-        For .xy files:
-          - 'df_xy' is read from the file using XYFileReader.
-          - 'creation_date' is read from the file's metadata.
-          - 'start_time' is set equal to the creation date.
-        """
         records = []
         for root_dir, _, files in os.walk(self.source):
             for file in files:
@@ -301,7 +333,7 @@ class DataScreener:
                     file_path = os.path.join(root_dir, file)
                     try:
                         xy_reader = XYFileReader(file_path)
-                        df_xy = xy_reader.read()
+                        df_xy = xy_reader.read()  # returns 'X','Y'
                     except Exception as e:
                         print(f"Error reading {file_path}: {e}")
                         continue
@@ -317,20 +349,23 @@ class DataScreener:
                     record = {
                         "filename": file,
                         "creation_date": creation_date,
-                        "start_time": creation_date,  # start_time is same as creation_date for .xy files
+                        "start_time": creation_date,
                         "df_xy": df_xy
                     }
-                    # Note: FilenameCategoryExtractor uses only the filename so passing None is acceptable.
                     for extractor in self.category_extractors:
-                        record.update(extractor.extract(file, None))
+                        upd = extractor.extract(file, None)  # or None for xy manager
+                        # Prefer non-None values; do not overwrite existing non-None with None
+                        for k, v in upd.items():
+                            if v is not None or k not in record:
+                                record[k] = v
+
+                    # Default: if cycle is missing or None, treat as cycle=1
+                    if 'cycle' not in record or record['cycle'] is None:
+                        record['cycle'] = 1
                     records.append(record)
         return records
 
     def _create_dataframe(self, records: list, sort_key=""):
-        """
-        Creates a DataFrame from a list of record dictionaries.
-        Optionally sorts the DataFrame by provided keys (e.g. 'cycle' and 'creation_date').
-        """
         if not records:
             print("No records to build DataFrame.")
             return pd.DataFrame()
@@ -338,7 +373,27 @@ class DataScreener:
         sort_cols = [col for col in [sort_key, 'cycle', 'creation_date'] if col in df.columns]
         if sort_cols:
             df.sort_values(by=sort_cols, inplace=True)
-        return df.reset_index(drop=True)
+        df.reset_index(drop=True)
+        return df
+
+    def _normalize_df(self):
+        """Ensure critical categories exist and are properly typed."""
+        if self.df is None or self.df.empty:
+            return
+        df = self.df
+
+        # cycle: default to 1 when missing/NaN; ensure int dtype
+        if 'cycle' not in df.columns:
+            df['cycle'] = 1
+        else:
+            df['cycle'] = pd.to_numeric(df['cycle'], errors='coerce').fillna(1).astype(int)
+
+        # (optional) pressure/temperature: try to coerce to numeric if present
+        for col in ('pressure', 'temperature'):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        self.df = df
 
 # ----------------------------------
 # Example usage

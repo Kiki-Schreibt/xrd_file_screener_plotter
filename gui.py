@@ -1,6 +1,7 @@
 #gui.py
 import os
 import sys
+import re
 import pandas as pd
 import pyqtgraph as pg
 
@@ -13,7 +14,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 
 # Import backend modules (assumed to be defined elsewhere)
 from main_backend import MainBackend
-from xrd_file_screener import DataScreener
+from xrd_file_screener import DataScreener, FilenameCategoryExtractor
 from stacked_plot_widget import StackedPlotWidget
 
 
@@ -140,39 +141,71 @@ class PTHInstancesWidget(QGroupBox):
 class PatternBuilderWidget(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Filename Pattern Builder", parent)
+        self.token_sequence = []  # keep the chosen tokens in order
+
         layout = QVBoxLayout(self)
         self.use_default_pattern_checkbox = QCheckBox("Use Default Pattern")
         self.use_default_pattern_checkbox.setChecked(True)
         self.use_default_pattern_checkbox.stateChanged.connect(self.toggle_custom_pattern)
         layout.addWidget(self.use_default_pattern_checkbox)
 
+        # Preview only (we will generate a robust regex from tokens)
         self.custom_pattern_lineedit = QLineEdit()
-        self.custom_pattern_lineedit.setPlaceholderText("Custom regex pattern (e.g., use Add Token to build)")
+        self.custom_pattern_lineedit.setPlaceholderText("Preview (tokens → regex).")
         self.custom_pattern_lineedit.setEnabled(False)
         layout.addWidget(self.custom_pattern_lineedit)
 
         self.token_combo = QComboBox()
-        self.token_combo.addItems(["gas", "pressure", "cycle", "numMes", "currentStep", "noIntMes", "temperature"])
+        # Use real keys that the extractor understands
+        self.token_combo.addItems([
+            "gas", "pressure", "cycle",
+            "numcurrentstep", "currenttempstep", "nointerruptmes", "temperature"
+        ])
         self.token_combo.setEnabled(False)
         layout.addWidget(self.token_combo)
 
+        buttons = QHBoxLayout()
         self.add_token_button = QPushButton("Add Token")
         self.add_token_button.setEnabled(False)
         self.add_token_button.clicked.connect(self.add_token_to_pattern)
-        layout.addWidget(self.add_token_button)
+        buttons.addWidget(self.add_token_button)
+
+        self.clear_tokens_button = QPushButton("Clear")
+        self.clear_tokens_button.setEnabled(False)
+        self.clear_tokens_button.clicked.connect(self.clear_tokens)
+        buttons.addWidget(self.clear_tokens_button)
+
+        layout.addLayout(buttons)
 
     def toggle_custom_pattern(self, state):
         use_default = self.use_default_pattern_checkbox.isChecked()
         self.custom_pattern_lineedit.setEnabled(not use_default)
         self.token_combo.setEnabled(not use_default)
         self.add_token_button.setEnabled(not use_default)
+        self.clear_tokens_button.setEnabled(not use_default)
+        if use_default:
+            self.token_sequence = []
+            self.custom_pattern_lineedit.clear()
 
     def add_token_to_pattern(self):
         token = self.token_combo.currentText()
-        token_pattern = f"(?P<{token}>\\S+)"
-        current_text = self.custom_pattern_lineedit.text().strip()
-        new_text = current_text + " " + token_pattern if current_text else token_pattern
-        self.custom_pattern_lineedit.setText(new_text)
+        self.token_sequence.append(token)
+        # Build a preview using TOKENS patterns separated by generic separators
+        try:
+            extractor = FilenameCategoryExtractor.from_tokens(self.token_sequence, sep=r"[\s,_-]+", suffix=r"$")
+            self.custom_pattern_lineedit.setText(extractor.pattern)
+        except Exception as e:
+            self.custom_pattern_lineedit.setText(f"Error: {e}")
+
+    def clear_tokens(self):
+        self.token_sequence = []
+        self.custom_pattern_lineedit.clear()
+
+    def get_custom_pattern(self) -> str | None:
+        if not self.token_sequence:
+            return None
+        extractor = FilenameCategoryExtractor.from_tokens(self.token_sequence, sep=r"[\s,_-]+", suffix=r"$")
+        return extractor.pattern
 
 
 class YOffsetSpinningBox(QGroupBox):
@@ -253,14 +286,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def _init_connections(self):
-        #Button connnections
         self.data_selection.xrd_select_button.clicked.connect(self.select_xrd_data)
         self.data_selection.pth_select_button.clicked.connect(self.select_pth_data)
         self.process_button.clicked.connect(self.process_and_plot)
         self.origin_button.clicked.connect(self.send_to_origin)
-        # Connect y offset editingFinished signal for live update
         self.y_offset_layout.y_offset_spinbox.editingFinished.connect(self.onYOffsetChanged)
-        # Connect change events from the PTH table
         self.pth_instances.table_widget.itemChanged.connect(self.on_pth_table_item_changed)
 
     def select_xrd_data(self):
@@ -294,7 +324,23 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def parse_filter_value(text):
+        """
+        Accepts:
+          - 'a-b'       -> (a,b)
+          - 'v1,v2,...' -> [v1,v2,...] (numbers auto-cast)
+          - '/regex/'   -> compiled regex
+          - scalar      -> int/float if possible else string
+        """
         text = text.strip()
+        if not text:
+            return None
+        # regex: /.../
+        if len(text) >= 2 and text.startswith('/') and text.endswith('/'):
+            try:
+                return re.compile(text[1:-1])
+            except Exception:
+                return text
+
         if '-' in text and not text.startswith('-'):
             parts = text.split('-')
             if len(parts) == 2:
@@ -324,34 +370,27 @@ class MainWindow(QMainWindow):
             return text
 
     def process_and_plot(self):
-        # Build filters dictionary from the filter widget
+        # Build filters dict
         filters = {}
         for category, widget in self.filter_widget.filter_inputs.items():
-            text = widget.text().strip()
-            if text:
-                filters[category] = MainWindow.parse_filter_value(text)
+            val = MainWindow.parse_filter_value(widget.text().strip())
+            if val is not None and widget.text().strip():
+                filters[category] = val
 
-        # Process PTH table data
-        selected_files = []
-        thresholds = {}
-        max_counts = {}
+        # PTH selection
+        selected_files, thresholds, max_counts = [], {}, {}
         table = self.pth_instances.table_widget
         for row in range(table.rowCount()):
             include_item = table.item(row, 0)
             if include_item and include_item.checkState() == Qt.Checked:
-                filename_item = table.item(row, 1)
-                threshold_item = table.item(row, 2)
-                max_count_item = table.item(row, 3)
-                if not (filename_item and threshold_item and max_count_item):
-                    continue
-                filename = filename_item.text()
+                filename = table.item(row, 1).text() if table.item(row, 1) else ""
                 try:
-                    thresh = int(threshold_item.text())
-                except ValueError:
+                    thresh = int(table.item(row, 2).text())
+                except Exception:
                     thresh = 0
                 try:
-                    max_count = int(max_count_item.text())
-                except ValueError:
+                    max_count = int(table.item(row, 3).text())
+                except Exception:
                     max_count = 5
                 selected_files.append(filename)
                 thresholds[filename] = thresh
@@ -361,28 +400,33 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please select an XRD data folder.")
             return
 
+        # Build custom filename pattern from tokens (if requested)
         custom_pattern = None
         if not self.pattern_builder.use_default_pattern_checkbox.isChecked():
-            pattern_text = self.pattern_builder.custom_pattern_lineedit.text().strip()
-            if pattern_text:
-                custom_pattern = pattern_text
+            custom_pattern = self.pattern_builder.get_custom_pattern()
 
         vertical_offset = self.y_offset_layout.y_offset_spinbox.value()
-        # Create backend instance
+
+        # Grouping tuple: only if a real selection was made
+        group_by = self.grouping_options.group_by_combo.currentText()
+        agg_col = self.grouping_options.agg_column_combo.currentText()
+        agg_fun = self.grouping_options.agg_func_combo.currentText()
+        group_by = None if group_by == "None" else group_by
+        agg_by = None if agg_col == "None" else (agg_col, agg_fun)
+
+        # Create backend
         self.backend = MainBackend(
             xrd_folder=self.xrd_path,
             pkl_path=os.path.join(self.xrd_path, "categorized_data.pkl"),
             pth_folder=self.pth_path if self.pth_path else None,
             filters=filters,
             vertical_offset=vertical_offset,
-            group_by=(self.grouping_options.group_by_combo.currentText()
-                      if self.grouping_options.group_by_combo.currentText() != "None" else None),
-            agg_by=((self.grouping_options.agg_column_combo.currentText(), self.grouping_options.agg_func_combo.currentText())
-                    if self.grouping_options.agg_column_combo.currentText() != "None" else None),
+            group_by=group_by,
+            agg_by=agg_by,
             custom_filename_pattern=custom_pattern
         )
 
-        # Start the worker thread for processing data
+        # Start worker
         self.worker = DataProcessingWorker(
             backend=self.backend,
             selected_files=selected_files,
@@ -393,34 +437,36 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def onProcessingFinished(self, df_filtered, df_lines):
-
         self.current_df_filtered = df_filtered
-        # Clear any existing plot widget.
+        # Clear old plot
         while self.plot_layout.count():
             widget = self.plot_layout.takeAt(0).widget()
             if widget:
                 widget.setParent(None)
-        # Create the new plot widget.
+        # New widget
         self.current_plot_widget = StackedPlotWidget(self.current_df_filtered,
                                                      vertical_offset=self.y_offset_layout.y_offset_spinbox.value())
-        # Set the extra parameters from the GUI filters and any standard parameters.
-        filter_params = {}  # Construct a dict from your GUI filter widgets.
-        # For example, you could iterate through self.filter_widget.filter_inputs:
+
+        # Build visible params for label overlay
+        filter_params = {}
         for cat, widget in self.filter_widget.filter_inputs.items():
-            text = widget.text().strip()
-            if text:
-                filter_params[cat] = text
-        if self.grouping_options.group_by_combo.currentText():
-            # Similarly, define any standard parameters.
+            t = widget.text().strip()
+            if t:
+                filter_params[cat] = t
+
+        grouping_params = {}
+        gb = self.grouping_options.group_by_combo.currentText()
+        if gb and gb != "None":
             grouping_params = {
-                "GroupBy": self.grouping_options.group_by_combo.currentText(),
+                "GroupBy": gb,
                 "AggFunc": self.grouping_options.agg_func_combo.currentText(),
                 "AggBy": self.grouping_options.agg_column_combo.currentText()
-                                }
+            }
+
         self.current_plot_widget.set_filter_params(filter_params)
         self.current_plot_widget.set_grouping_params(grouping_params)
 
-        if not df_lines.empty:
+        if df_lines is not None and not df_lines.empty:
             self.current_plot_widget.add_vertical_lines(df_lines=df_lines)
         self.plot_layout.addWidget(self.current_plot_widget)
         self.current_plot_widget.plot_stacked()

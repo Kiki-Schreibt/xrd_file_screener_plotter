@@ -5,56 +5,45 @@ from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
 
 from xrd_file_screener import DataScreener
 
+import pandas as pd
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
+
 class StackedPlotWidget(pg.GraphicsLayoutWidget):
     """
-    A widget that displays a stacked plot of XY data from a given DataFrame.
-
-    The DataFrame is expected to have at least these columns:
-      - 'filename': a label for the curve
-      - 'df_xy': a DataFrame with columns "X" and "Y" containing the data
+    Displays stacked XY curves from a DataFrame:
+      columns: 'filename', 'df_xy' (with 'X','Y'), plus any category columns.
     """
     def __init__(self, data_frame, vertical_offset=10, parent=None):
-        """
-        :param data_frame: Pandas DataFrame containing the XY data.
-        :param vertical_offset: The vertical offset applied between curves.
-        :param parent: Optional parent widget.
-        """
         super().__init__(parent)
         self.data_frame = data_frame
         self.vertical_offset = vertical_offset
-        self.filter_params = {}    # e.g., {"temperature": "285-305", "cycle": "0-20"}
-        self.grouping_params = {}  # e.g., {"GroupBy": "cycle", "AggFunc": "max"}
+        self.filter_params = {}
+        self.grouping_params = {}
         self.standard_params = {}
+
+        self.name_mapping = {
+            'nointerruptmes': 'Without interruption: ',
+            'pressure': 'Pressure: ',
+            'cycle': 'Cycle ',
+            'numcurrentstep': 'Step program #: ',
+            'currenttempstep': 'Meas. @program step: ',
+            'gas': "Gas: ",
+            'temperature': 'Temperature: ',
+            'GroupBy': 'Grouped by: ',
+            'AggBy': 'Sorted in group by: ',
+            'AggFunc': 'Shown each group: '
+        }
         self._init_ui()
-        self.name_mapping ={'nointerruptmes': 'Without interruption: ',
-                          'pressure': 'Pressure: ',
-                          'cycle': 'Cycle #',
-                          'numcurrentstep': 'Step temperature program: ',
-                          'currenttempstep': 'Measurements @program step: ',
-                          'gas' : "Gas: ",
-                          'temperature': 'Temperature: ',
-                          'GroupBy': 'Grouped by: ',
-                          'AggBy': 'Sorted in group by: ',
-                          'AggFunc': 'Shown each group: '
-                        }
 
     def _init_ui(self):
-        """Set up the UI (plot area) of the widget."""
         self.setWindowTitle('Stacked XY Data')
         self.resize(800, 600)
         self.plot_item = self.addPlot(title="Diffractograms")
-
-
         font = QtGui.QFont("Arial", 16)
-
-
         self.plot_item.setLabel('left', 'Intensity (a.u.)')
         self.plot_item.setLabel('bottom', '2 Theta (°)')
-
-        # Create a QFont for tick labels
-        tick_font = QtGui.QFont("Arial", 14)  # Change font type and size as desired
-
-        # Update the left and bottom axis tick fonts.
+        tick_font = QtGui.QFont("Arial", 14)
         left_axis = self.plot_item.getAxis('left')
         bottom_axis = self.plot_item.getAxis('bottom')
         left_axis.setStyle(tickFont=tick_font)
@@ -62,9 +51,7 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
         left_axis.label.setFont(font)
         bottom_axis.label.setFont(font)
 
-
     def plot_stacked(self):
-        """Plot each XY dataset as a stacked curve in the plot_item."""
         if self.data_frame.empty:
             return
         num_curves = len(self.data_frame)
@@ -73,159 +60,90 @@ class StackedPlotWidget(pg.GraphicsLayoutWidget):
             xy_df = row.get('df_xy')
             if xy_df is None or xy_df.empty:
                 continue
-
             x = xy_df['X'].values
-            #y = self._normalize_series(xy_df['Y']) + idx * 0.05
             y = xy_df['Y'].values + idx * self.vertical_offset
-
             pen = pg.mkPen(color=pg.intColor(idx, hues=num_curves), width=2)
             label = self._create_xy_label(row)
-            self.plot_item.plot(x, y, pen=pen, name=[label])
+            self.plot_item.plot(x, y, pen=pen, name=label)
             self._add_text_item_to_line(x, y, label, pen)
 
     def add_vertical_lines(self, df_lines):
-        """
-        Add vertical lines to the plot with an extra legend using a DataFrame.
-        Before adding new vertical lines, remove any existing legend.
-        """
-        # Remove the existing legend if it exists.
         if hasattr(self, 'vertical_legend') and self.vertical_legend is not None:
             try:
                 self.vertical_legend.setParentItem(None)
-                self.vertical_legend = None
-            except Exception as e:
-                print("Error removing existing legend:", e)
+            except Exception:
+                pass
+            self.vertical_legend = None
 
-        # Create and store a new legend.
         self.vertical_legend = pg.LegendItem(offset=(50, 50))
         self.vertical_legend.setParentItem(self.plot_item.graphicsItem())
 
         num_groups = len(df_lines.columns)
         for idx, legend_label in enumerate(df_lines.columns):
-            # Choose a color for this group.
             color = pg.intColor(idx, hues=num_groups)
-            # Use a dashed line style.
             pen = pg.mkPen(color=color, style=QtCore.Qt.DashLine, width=2)
-            # Get the x positions for this legend label and drop NaN values.
             x_positions = df_lines[legend_label].dropna().tolist()
-            # Draw a vertical line (angle=90) for each x position.
             for x in x_positions:
                 line = pg.InfiniteLine(pos=x, angle=90, pen=pen)
                 self.plot_item.addItem(line)
-            # Create a dummy plot item to add to the legend.
             dummy_item = pg.PlotDataItem([0], [0], pen=pen)
             self.vertical_legend.addItem(dummy_item, legend_label)
-        #todo: does not affect legend font....
-        custom_font = QtGui.QFont("Arial", 16)  # Change "Arial" and 16 to your desired font and size.
-        for sample, label in self.vertical_legend.items:
-            label.setFont(custom_font)
-
-
-    def add_vertical_lines_from_struct(self, lines_by_legend):
-        """
-        Add vertical lines to the plot with an extra legend.
-
-        :param lines_by_legend: dict mapping a legend label to a list of x positions.
-            For example:
-                {
-                    "Event A": [1, 2, 3, 4, 5],
-                    "Event B": [5, 6, 7, 8]
-                }
-        Each group of vertical lines will be drawn with the same color.
-        """
-        # Create a new legend for the vertical lines and add it to the plot.
-        vertical_legend = pg.LegendItem(offset=(50, 50))
-        vertical_legend.setParentItem(self.plot_item.graphicsItem())
-
-        num_groups = len(lines_by_legend)
-        for idx, (legend_label, x_positions) in enumerate(lines_by_legend.items()):
-            # Choose a color for this group.
-            color = pg.intColor(idx, hues=num_groups)
-            # Use a dashed line style.
-            pen = pg.mkPen(color=color, style=QtCore.Qt.DashLine, width=2)
-            # Draw a vertical line (angle=90) for each x position.
-            for x in x_positions:
-                line = pg.InfiniteLine(pos=x, angle=90, pen=pen)
-                self.plot_item.addItem(line)
-            # To add a legend entry, create a dummy plot item.
-            dummy_item = pg.PlotDataItem([0], [0], pen=pen)
-            vertical_legend.addItem(dummy_item, legend_label)
+        custom_font = QtGui.QFont("Arial", 16)
+        if hasattr(self.vertical_legend, 'items'):
+            for sample, label in getattr(self.vertical_legend, 'items', []):
+                try:
+                    label.setFont(custom_font)
+                except Exception:
+                    pass
 
     def _normalize_series(self, series):
-        normed_series = (series - series.min()) / (series.max() - series.min())
-        return normed_series
+        return (series - series.min()) / (series.max() - series.min())
 
     def _create_xy_label(self, row):
-        names_to_exclude = {"filename", "df_xy"}
-        labels = []
-        label = "Couldn't find info"
-        strings_to_delete = ['measurements_', 'current_', 'creation_']
-        for index, value in row.items():
-            if index not in names_to_exclude:
-                for s in strings_to_delete:
-                    index = index.replace(s, '')
-
-                labels.append(f"{index}: {value}")
-        if labels:
-            label = " ".join(labels)
-        return label
+        names_to_exclude = {"filename", "df_xy", "creation_date", "start_time"}
+        parts = []
+        for k, v in row.items():
+            if k in names_to_exclude or v is None:
+                continue
+            disp = self.name_mapping.get(k, k)
+            parts.append(f"{disp}{v}")
+        return " | ".join(parts) if parts else "Curve"
 
     def _add_text_item_to_line(self, x, y, base_label, pen):
-        # Build extra label text based on the stored parameters.
-
-
-        final_label = f"{base_label}"
-        custom_label = self._create_text_item_for_line()
-        if custom_label:
-            final_label = f"{custom_label}"
-
-        # Determine the position for the text item.
-        x_pos = x[-1]
-        y_pos = y[-1]
+        final_label = base_label
+        custom = self._create_text_item_for_line()
+        if custom:
+            final_label = custom
+        x_pos = x[-1]; y_pos = y[-1]
         text_item = pg.TextItem(text=final_label, anchor=(0, 1), color=pen.color())
-        offset_x = x.max() * 0.02
-        offset_y = 0
-        custom_font = QtGui.QFont("Arial", 12)
-        text_item.setFont(custom_font)  # Apply the custom font here.
-        text_item.setPos(x_pos + offset_x, y_pos + offset_y)
+        text_item.setFont(QtGui.QFont("Arial", 12))
+        offset_x = (x.max() - x.min()) * 0.02 if len(x) else 0.5
         self.plot_item.addItem(text_item)
-        # Optionally draw a connecting dashed line.
-        self.plot_item.plot([x_pos, x_pos + offset_x],
-                            [y_pos, y_pos + offset_y],
-                            pen=pg.mkPen(color=pen.color(), style=pg.QtCore.Qt.DashLine))
+        text_item.setPos(x_pos + offset_x, y_pos)
 
     def update_plot(self, new_data_frame):
-        """
-        Clears the existing plot and re-plots using the new DataFrame.
-        """
         self.data_frame = new_data_frame
-        self.plot_item.clear()  # Clear current items and legend
+        self.plot_item.clear()
         self.plot_stacked()
 
     def set_filter_params(self, params: dict):
-        self.filter_params = params
+        self.filter_params = params or {}
 
     def set_grouping_params(self, params: dict):
-        self.grouping_params = params
+        self.grouping_params = params or {}
 
     def set_standard_params(self, params: dict):
-        self.standard_params = params
+        self.standard_params = params or {}
 
     def _create_text_item_for_line(self):
-        #todo: polish labeling
-
-        custom_label = ""
+        segments = []
         if self.standard_params:
-            filters_str = [f"{self.name_mapping.get(k, k)}: {v}" for k, v in self.standard_params.items()]
-            custom_label += f" ,{filters_str}"
+            segments += [f"{self.name_mapping.get(k, k)}{v}" for k, v in self.standard_params.items()]
         if self.filter_params:
-            filters_str = [f"{self.name_mapping.get(k, k)}: {v}" for k, v in self.filter_params.items()]
-            custom_label += f" ,{filters_str}"
+            segments += [f"{self.name_mapping.get(k, k)}{v}" for k, v in self.filter_params.items()]
         if self.grouping_params:
-            standard_str = [f"{self.name_mapping.get(k, k)}: {v}" for k, v in self.grouping_params.items()]
-            custom_label += f" ,{standard_str}"
-        # Final label combines the base label with extra parameters.
-        return custom_label or None
+            segments += [f"{self.name_mapping.get(k, k)}{v}" for k, v in self.grouping_params.items()]
+        return " , ".join(segments) if segments else None
 
 
 # ------------------------------

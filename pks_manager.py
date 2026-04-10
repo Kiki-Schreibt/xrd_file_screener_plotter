@@ -15,10 +15,7 @@ class PTHFileData:
 
 class PTHParser:
     """
-    A class to parse .PTH files from XRD measurements.
-
-    It separates the metadata (header comments and key–value pairs)
-    from the tabular peaklist data and stores them separately.
+    Parses .PTH files (metadata + peaklist). Normalizes data columns to 'X','Y'.
     """
     def __init__(self, file_path: str = None, folder_path: str = None):
         self.file_path = file_path
@@ -28,10 +25,6 @@ class PTHParser:
         self.all_data: List[PTHFileData] = []
 
     def parse(self, add_metadata: bool = False, file_path: str = "") -> List[PTHFileData]:
-        """
-        Main entry point. If a folder path is given, parse all files;
-        if a single file is specified, return a list with one PTHFileData object.
-        """
         if self.folder_path and not file_path:
             return self.parse_folder(add_metadata=add_metadata)
         elif file_path:
@@ -40,9 +33,6 @@ class PTHParser:
             raise ValueError("Either folder_path or file_path must be provided.")
 
     def parse_file(self, add_metadata: bool = False, file_path: str = "", filename: str = "") -> PTHFileData:
-        """
-        Parse a single .PTH file, separating metadata and table data.
-        """
         try:
             with open(file_path, 'r', encoding="utf-8") as f:
                 lines = [line.strip() for line in f if line.strip()]
@@ -68,33 +58,25 @@ class PTHParser:
             except Exception:
                 pass
 
-        # Rename columns if they exist.
+        # Normalize to 'X','Y'
         if "2Theta" in df.columns and "I(rel)" in df.columns:
-            df.rename(columns={"2Theta": "x", "I(rel)": "y"}, inplace=True)
+            df.rename(columns={"2Theta": "X", "I(rel)": "Y"}, inplace=True)
+        elif "x" in df.columns and "y" in df.columns:
+            df.rename(columns={"x": "X", "y": "Y"}, inplace=True)
 
         if add_metadata:
             for key, value in metadata.items():
                 df[key] = value
 
-        # Create a df_xy only if the expected columns exist.
-        if "x" in df.columns and "y" in df.columns:
-            df_xy = df[['x', 'y']]
-        else:
-            df_xy = pd.DataFrame()
+        df_xy = df[['X', 'Y']] if set(['X', 'Y']).issubset(df.columns) else pd.DataFrame()
 
-        # Optionally extract a simplified name from metadata.
         if "STOE Peak File" in metadata:
             metadata['name'] = metadata['STOE Peak File'].partition('_')[0]
-            #print(f"Parsed file name: {metadata['name']}")  # Consider using logging instead.
 
         return PTHFileData(filename=filename, metadata=metadata, df=df, df_xy=df_xy)
 
     def _split_lines(self, lines: List[str]) -> Tuple[List[str], List[str]]:
-        """
-        Split lines into metadata lines and table lines.
-        """
-        meta_lines = []
-        table_lines = []
+        meta_lines, table_lines = [], []
         table_start_index = None
         for i, line in enumerate(lines):
             if line.startswith("Peaklist"):
@@ -106,10 +88,6 @@ class PTHParser:
         return meta_lines, table_lines
 
     def _parse_metadata(self, meta_lines: List[str]) -> Dict[str, Any]:
-        """
-        Parse metadata from the given lines.
-        Lines starting with '!' are considered comments; lines with ':' are key–value pairs.
-        """
         metadata = {}
         for line in meta_lines:
             clean_line = line.lstrip("!").strip() if line.startswith("!") else line
@@ -121,13 +99,9 @@ class PTHParser:
         return metadata
 
     def _parse_table_lines(self, table_lines: List[str]) -> Tuple[List[str], List[List[str]]]:
-        """
-        Parse the table section to extract a header and the data rows.
-        """
         header = None
         data_rows = []
         data_start = 0
-
         for j, line in enumerate(table_lines):
             if line.startswith("Peaklist"):
                 continue
@@ -136,7 +110,6 @@ class PTHParser:
                 header = header_line.split()
                 data_start = j + 1
                 break
-
         for line in table_lines[data_start:]:
             if line.startswith("!"):
                 continue
@@ -145,19 +118,14 @@ class PTHParser:
         return header, data_rows
 
     def _adjust_rows(self, header: List[str], data_rows: List[List[str]]) -> Tuple[List[str], List[List[str]]]:
-        """
-        Ensure every row has the same number of columns by adjusting header and data rows.
-        """
         header_len = len(header) if header is not None else 0
         max_cols = header_len
         for row in data_rows:
             max_cols = max(max_cols, len(row))
-
         if header is None or len(header) == 0:
             header = [f"Col_{i+1}" for i in range(max_cols)]
         elif len(header) < max_cols:
             header.extend([f"Col_{i+1}" for i in range(len(header), max_cols)])
-
         adjusted_rows = []
         for row in data_rows:
             if len(row) < max_cols:
@@ -168,13 +136,9 @@ class PTHParser:
         return header, adjusted_rows
 
     def parse_folder(self, add_metadata: bool = False) -> List[PTHFileData]:
-        """
-        Parse all .PTH files in the specified folder.
-        """
         results: List[PTHFileData] = []
         if not os.path.isdir(self.folder_path):
             raise ValueError("Provided folder path does not exist or is not a directory.")
-
         for file in os.listdir(self.folder_path):
             if file.lower().endswith('.pth'):
                 file_path = os.path.join(self.folder_path, file)

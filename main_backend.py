@@ -6,12 +6,10 @@ import threading
 import pandas as pd
 from pyqtgraph.Qt import QtWidgets
 
-# Import your custom classes.
-from xrd_file_screener import DataScreener, FilenameCategoryExtractor  # Reads raw .rasx files and builds a DataFrame
-from stacked_plot_widget import StackedPlotWidget  # Widget for plotting
-from pth_processor import PTHProcessor         # New class to handle PTH file processing
+from xrd_file_screener import DataScreener, FilenameCategoryExtractor, CycleExtractor
+from stacked_plot_widget import StackedPlotWidget
+from pth_processor import PTHProcessor
 
-# Configure logging for better debugging and traceability.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 
@@ -31,41 +29,47 @@ class MainBackend:
         self.xrd_folder = xrd_folder
         self.pkl_path = pkl_path
         self.pth_folder = pth_folder
-        self.filters = filters
+        self.filters = filters or {}
         self.vertical_offset = vertical_offset
         self.group_by = group_by
         self.agg_by = agg_by
 
-         # Use a custom FilenameCategoryExtractor if a custom pattern is provided.
+        # Build extractor chain: custom first (if provided), then default fallback.
+        category_extractors = []
         if custom_filename_pattern:
-            extractor = FilenameCategoryExtractor(pattern=custom_filename_pattern)
-            self.data_screener = DataScreener(self.xrd_folder, category_extractors=[extractor])
-        else:
-            self.data_screener = DataScreener(self.xrd_folder)
+            category_extractors.append(FilenameCategoryExtractor(pattern=custom_filename_pattern))
+        category_extractors.append(FilenameCategoryExtractor())  # default with optional cycle
+        category_extractors.append(CycleExtractor())             # belt-and-suspenders cycle finder
 
-        if self.pth_folder:
-            from pth_processor import PTHProcessor
-            self.pth_processor = PTHProcessor(folder_path=self.pth_folder)
-
-        # Initialize data screener and PTH processor.
-        self.data_screener = DataScreener(self.xrd_folder)
-        if self.pth_folder:
-            self.pth_processor = PTHProcessor(folder_path=self.pth_folder)
+        self.data_screener = DataScreener(self.xrd_folder, category_extractors=category_extractors)
+        self.pth_processor = PTHProcessor(folder_path=self.pth_folder) if self.pth_folder else None
 
     def load_xrd_data(self) -> bool:
         """
-        Load XRD data from a pickle file if available; otherwise, read raw data
-        and save the processed results.
+        Try loading from pickle. If missing/empty/invalid, rebuild from raw and
+        save to self.pkl_path (absolute). Return True only if df is non-empty.
         """
+        # 1) Try pickle if present
         if self.pkl_path and os.path.exists(self.pkl_path):
             logging.info(f"Loading categorized XRD data from {self.pkl_path}...")
-            self.data_screener.load()
-        else:
-            logging.info(f"Reading raw XRD data from directory {self.xrd_folder}...")
-            self.data_screener.read_files()
-            if self.pkl_path:
-                self.data_screener.save_to_file(filename=self.pkl_path)
+            self.data_screener.load_from_file(self.pkl_path)
+            try:
+                self.data_screener.save_to_file(self.pkl_path)
+            except Exception:
+                pass
+            if isinstance(self.data_screener.df, pd.DataFrame) and not self.data_screener.df.empty:
+                return True
+            logging.warning("Pickle load yielded empty/invalid DataFrame; rebuilding from raw...")
 
+        # 2) Rebuild from raw
+        logging.info(f"Reading raw XRD data from directory {self.xrd_folder}...")
+        self.data_screener.read_files()
+
+        # 3) Save exactly to the requested pickle path (absolute or inside folder)
+        if self.pkl_path:
+            self.data_screener.save_to_file(self.pkl_path)
+
+        # 4) Final guard
         if self.data_screener.df is None or self.data_screener.df.empty:
             logging.error("No XRD data loaded.")
             return False
@@ -73,22 +77,17 @@ class MainBackend:
 
     def filter_xrd_data(self) -> pd.DataFrame:
         """
-        Apply user-specified filters to the XRD data. If no filter value is set,
-        the data remains unfiltered for that category; however, if grouping (group_by
-        and agg_by) is specified, that grouping is applied even if filters are empty.
+        Apply filters and optional grouping/aggregation.
+        Accepts ranges (tuple/list len 2), sets/lists, callables, regex (compiled), or scalars.
         """
         df = self.data_screener.df
-        # Apply filtering if either filters exist or grouping options are provided.
         if self.filters or (self.group_by and self.agg_by):
             logging.info("Applying filters to XRD data...")
-            if self.group_by and self.agg_by:
-                df_filtered = self.data_screener.filter_by_categories(
-                    group_by=self.group_by,
-                    agg_by=self.agg_by,
-                    **self.filters
-                )
-            else:
-                df_filtered = self.data_screener.filter_by_categories(**self.filters)
+            df_filtered = self.data_screener.filter_by_categories(
+                group_by=self.group_by,
+                agg_by=self.agg_by,
+                **self.filters
+            )
             if df_filtered is None or df_filtered.empty:
                 logging.warning("No matching rows found for the given filters.")
                 return pd.DataFrame()
@@ -98,63 +97,39 @@ class MainBackend:
     def process_pth_data(self, criteria: dict = {}, thresholds: dict = None, max_counts: dict = None) -> pd.DataFrame:
         """
         Load and process PTH files, then extract vertical line data.
-        Accepts an optional thresholds dict mapping filenames to individual y thresholds.
+        Columns normalized to 'X','Y' in PTH parser; this returns a wide df with column per phase.
         """
+        if not self.pth_processor:
+            return pd.DataFrame()
         logging.info(f"Processing PTH files from folder: {self.pth_folder}")
         self.pth_processor.load_pth_files(add_metadata=True)
-        available_files = self.pth_processor.get_available_filenames()
-        logging.info(f"Available PTH filenames: {available_files}")
-
-        # Filter based on criteria (e.g. specific filenames)
         filtered_pth = self.pth_processor.filter_pth_instances(criteria=criteria)
         self.pth_processor.pth_instances = filtered_pth
 
-        # Use individual thresholds (or default if not provided)
-        if thresholds is None:
-            thresholds = {}  # If none provided, the filter method will use the default threshold.
-        self.pth_processor.filter_by_y_threshold(thresholds=thresholds)
-        # Use individual max_counts (or default if not provided)
-        if max_counts is None:
-            max_counts = {}
-        self.pth_processor.filter_by_y_count(max_counts=max_counts)
+        # Thresholds and max_counts may be per-filename; defaults inside helper methods.
+        self.pth_processor.filter_by_y_threshold(thresholds=thresholds or {})
+        self.pth_processor.filter_by_y_count(max_counts=max_counts or {})
         return self.pth_processor.extract_vertical_lines()
 
     def show_plot(self, df_filtered: pd.DataFrame, df_lines: pd.DataFrame):
-        """
-        Launch a Qt application to display a stacked plot of filtered XRD data
-        with vertical lines derived from PTH files.
-        """
         app = QtWidgets.QApplication(sys.argv)
         widget = StackedPlotWidget(df_filtered, vertical_offset=self.vertical_offset)
-        widget.add_vertical_lines(df_lines=df_lines)
+        if df_lines is not None and not df_lines.empty:
+            widget.add_vertical_lines(df_lines=df_lines)
         widget.show()
         sys.exit(app.exec())
 
     def run(self):
-        """
-        Main run method: loads XRD data, applies filters, processes PTH data, and shows the plot.
-        """
         if not self.load_xrd_data():
             return
-
         df_filtered = self.filter_xrd_data()
         if df_filtered.empty:
             logging.error("Filtered XRD data is empty. Exiting.")
             return
-
-        # Process PTH data (synchronously here, but could be done asynchronously as needed).
-        individual_thresholds = {
-                    "Mg_642654_Cu_borad.PTH": 75,
-                    "MgH2_155807_Cu.PTH": 80,
-                    "MgO_Periclase_77821_Cu.PTH": 85
-                    }
-        df_lines = self.process_pth_data(
-                    criteria={"filename": ["Mg_642654_Cu_borad.PTH",
-                                             "MgH2_155807_Cu.PTH",
-                                             "MgO_Periclase_77821_Cu.PTH"]},
-                    thresholds=individual_thresholds
-                )
-        logging.info("Displaying stacked plot with vertical PTH lines.")
+        df_lines = pd.DataFrame()
+        if self.pth_processor:
+            df_lines = self.process_pth_data()
+        logging.info("Displaying stacked plot.")
         self.show_plot(df_filtered, df_lines)
 
 
