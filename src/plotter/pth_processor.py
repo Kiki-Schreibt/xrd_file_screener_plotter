@@ -1,7 +1,7 @@
 #pth_processor.py
 import os
 import pandas as pd
-from pks_manager import PTHParser, PTHFileData
+from plotter.pks_manager import PTHParser, PTHFileData
 
 
 class PTHProcessor:

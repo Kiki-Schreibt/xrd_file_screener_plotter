@@ -6,9 +6,9 @@ import threading
 import pandas as pd
 from pyqtgraph.Qt import QtWidgets
 
-from xrd_file_screener import DataScreener, FilenameCategoryExtractor, CycleExtractor
-from stacked_plot_widget import StackedPlotWidget
-from pth_processor import PTHProcessor
+from plotter.xrd_file_screener import DataScreener, FilenameCategoryExtractor, CycleExtractor
+from plotter.stacked_plot_widget import StackedPlotWidget
+from plotter.pth_processor import PTHProcessor
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 

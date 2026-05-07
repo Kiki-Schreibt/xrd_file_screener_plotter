@@ -3,6 +3,7 @@ import pandas as pd
 
 
 class XYFileReader:
+
     def __init__(self, filepath):
         """
         Initialize the reader with the path to the .xy file.

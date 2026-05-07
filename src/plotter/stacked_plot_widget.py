@@ -3,11 +3,7 @@ import pandas as pd
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
 
-from xrd_file_screener import DataScreener
-
-import pandas as pd
-import pyqtgraph as pg
-from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
+from plotter.xrd_file_screener import DataScreener
 
 class StackedPlotWidget(pg.GraphicsLayoutWidget):
     """

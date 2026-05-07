@@ -2,6 +2,7 @@
 import os
 import sys
 import re
+from pathlib import Path
 import pandas as pd
 import pyqtgraph as pg
 
@@ -12,10 +13,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
+# Allow `python plotter/gui.py` from `src` and `python src/plotter/gui.py` from repo root.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 # Import backend modules (assumed to be defined elsewhere)
-from main_backend import MainBackend
-from xrd_file_screener import DataScreener, FilenameCategoryExtractor
-from stacked_plot_widget import StackedPlotWidget
+from plotter.main_backend import MainBackend
+from plotter.xrd_file_screener import DataScreener, FilenameCategoryExtractor
+from plotter.stacked_plot_widget import StackedPlotWidget
 
 
 # ----------------------------------------------------------------------
@@ -316,7 +321,7 @@ class MainWindow(QMainWindow):
         if folder:
             self.pth_path = folder
             self.data_selection.pth_path_label.setText(folder)
-            from pth_processor import PTHProcessor  # assumed to be defined elsewhere
+            from plotter.pth_processor import PTHProcessor  # assumed to be defined elsewhere
             processor = PTHProcessor(folder_path=self.pth_path)
             processor.load_pth_files(add_metadata=True)
             filenames = processor.get_available_filenames()

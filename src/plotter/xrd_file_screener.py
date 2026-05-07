@@ -4,26 +4,20 @@ import re
 import pandas as pd
 import datetime
 from pathlib import Path
-from rasx_manager import RasxDataManager
-from xy_manager import XYFileReader
+
+from plotter.rasx_manager import RasxDataManager
+from plotter.xy_manager import XYFileReader
 
 # ----------------------------------
 # Category Extractor Base and Classes
 # ----------------------------------
-
-import os
-import re
-import pandas as pd
-import datetime
-from pathlib import Path
-from rasx_manager import RasxDataManager
-from xy_manager import XYFileReader
 
 # ---------------- Category Extractors ---------------- #
 
 class BaseCategoryExtractor:
     def extract(self, filename: str, manager) -> dict:
         raise NotImplementedError
+
     def get_categories(self) -> list:
         raise NotImplementedError
 
