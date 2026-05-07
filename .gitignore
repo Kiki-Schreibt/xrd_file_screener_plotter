@@ -1,4 +1,4 @@
 test_data/
 .venv/
 site/
-__pycache__/
+__pycache__/".venv/" 
