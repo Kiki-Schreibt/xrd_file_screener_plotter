@@ -50,7 +50,6 @@ Main features in the current codebase:
 |       |-- pks_manager.py          # .PTH parser
 |       |-- pth_processor.py        # PTH filtering and vertical line extraction
 |       `-- stacked_plot_widget.py  # Stacked diffractogram plotting widget
-|-- test_data/                      # Example XRD, XY, PTH, and cached data
 |-- docs/                           # Documentation scaffolding, still incomplete
 |-- requirements.txt                # Python dependencies
 |-- README.md
@@ -116,7 +115,8 @@ In practice, the code is built around filename conventions similar to
 some adjustment of the pattern will likely be necessary.
 
 ## Cached Data
-When raw XRD files are read, the categorized DataFrame can be stored as a pickle or CSV file and reloaded later. This is useful when a folder contains many scans and you do not want to rebuild the metadata table every time.
+When raw XRD files are read, the categorized DataFrame can be stored as a pickle or CSV file and reloaded later. 
+This is useful when a folder contains many scans and you do not want to rebuild the metadata table every time.
 
 
 ## Notes and Limitations
