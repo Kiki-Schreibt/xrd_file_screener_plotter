@@ -3,3 +3,5 @@ test_data/
 site/
 __pycache__/".venv/" 
 ".idea/" 
+"site/" 
+"in_situ_xrd_plotter.7z" 
