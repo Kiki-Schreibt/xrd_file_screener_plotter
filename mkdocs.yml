@@ -1,5 +1,6 @@
 site_name: In-Situ XRD Plotter
 
+
 theme:
   name: material
 
@@ -8,15 +9,30 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths:
-            - src
+            options:
+              show_source: true
+              show_root_heading: true
+              show_submodules: false
+            paths: [src]
   - gen-files:
       scripts:
-        - docs/gen_api.py
+        - docs/gen_api_v2.py
   - awesome-pages
-
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
 
 nav:
-  - Home: index.md
-  - API: api/index.md
+  - index.md
+  - User Manual:
+      - Overview: user_manual/overview.md
 
+      - Getting Started:
+         - Installation: user_manual/getting_started/installation.md
+         - Configuration Creation: user_manual/getting_started/config_creation.md
+         - Start New Test: user_manual/getting_started/create_new_test.md
+
+
+
+  - API: api/index.md

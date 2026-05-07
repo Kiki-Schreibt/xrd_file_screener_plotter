@@ -1,103 +1,96 @@
+
 import os
 import sys
+from pathlib import Path
 import mkdocs_gen_files
+
+
+EXCLUDE = {
+    "__init__",
+    "__main__",
+    "conftest",
+}
+
+EXCLUDE_DIRS = {
+    "__pycache__",
+    "tests",
+    "migrations",
+}
+
+GROUPS = {
+    "Core": ["core", "client", "main"],
+    "Models": ["models", "schemas"],
+    "Services": ["services"],
+    "Utils": ["utils", "helpers"],
+}
+
 
 sys.path.insert(0, "src")
 
-SRC_DIR = "src"
-API_DIR = "api"
-
-print("GEN FILES RUNNING")
+SRC_DIR = Path("src")
+API_INDEX = Path("api/index.md")
 
 
-def prettify(name: str) -> str:
-    return name.replace("_", " ").title()
+def is_valid_module(path: Path):
+    return (
+        path.suffix == ".py"
+        and path.stem not in EXCLUDE
+    )
 
 
-def list_submodules(root_path):
-    """Return subpackages + modules (no __init__)"""
-    items = []
-    for entry in sorted(os.listdir(root_path)):
-        full = os.path.join(root_path, entry)
-        if entry == "__pycache__":
+def collect_modules():
+    modules = []
+
+    for path in SRC_DIR.rglob("*.py"):
+        if any(part in EXCLUDE_DIRS for part in path.parts):
             continue
-        if os.path.isdir(full):
-            items.append((entry, "dir"))
-        elif entry.endswith(".py") and entry != "__init__.py":
-            items.append((entry[:-3], "file"))
-    return items
-
-
-for root, dirs, files in os.walk(SRC_DIR):
-    if "__pycache__" in root:
-        continue
-
-    rel_path = os.path.relpath(root, SRC_DIR)
-    rel_path = "" if rel_path == "." else rel_path
-
-    doc_path = os.path.join(API_DIR, rel_path).lower()
-    module_path = rel_path.replace(os.sep, ".")
-
-    os.makedirs(doc_path, exist_ok=True)
-
-    # --- navigation (.pages) ---
-    pages_file = os.path.join(doc_path, ".pages")
-    with mkdocs_gen_files.open(pages_file, "w") as nav:
-        title = prettify(os.path.basename(root)) if rel_path else "API"
-        nav.write(f"title: {title}\n")
-
-    # --- index.md ---
-    index_file = os.path.join(doc_path, "index.md")
-    subitems = list_submodules(root)
-
-    with mkdocs_gen_files.open(index_file, "w") as f:
-        if not module_path:
-            # ROOT INDEX
-            f.write("# API Reference\n\n")
-            f.write("Welcome to the API documentation.\n\n")
-            f.write("## Modules\n\n")
-
-            if subitems:
-                for name, typ in subitems:
-                    if typ == "dir":
-                        f.write(f"- [{prettify(name)}]({name}/)\n")
-                    else:
-                        f.write(f"- [{prettify(name)}]({name}.md)\n")
-            else:
-                f.write("_No modules found._\n")
-
-        else:
-            # PACKAGE INDEX
-            title = prettify(module_path.split(".")[-1])
-            f.write(f"# {title}\n\n")
-
-            f.write(f"::: {module_path}\n\n")
-
-            if subitems:
-                f.write("## Contents\n\n")
-                for name, typ in subitems:
-                    if typ == "dir":
-                        f.write(f"- [{prettify(name)}]({name}/)\n")
-                    else:
-                        f.write(f"- [{prettify(name)}]({name}.md)\n")
-
-    # --- module files ---
-    for file in files:
-        if not file.endswith(".py") or file == "__init__.py":
+        if not is_valid_module(path):
             continue
 
-        module_name = file[:-3]
+        rel = path.relative_to(SRC_DIR).with_suffix("")
+        import_path = ".".join(rel.parts)
+        modules.append(import_path)
 
-        if module_path:
-            import_path = f"{module_path}.{module_name}"
-        else:
-            import_path = module_name
+    return sorted(modules)
 
-        file_path = os.path.join(doc_path, f"{module_name}.md")
 
-        with mkdocs_gen_files.open(file_path, "w") as f:
-            f.write(f"# {prettify(module_name)}\n\n")
-            f.write(f"::: {import_path}\n")
-            f.write("    options:\n")
-            f.write("      show_root_heading: true\n")
-            f.write("      show_source: true\n")
+def group_modules(modules):
+    grouped = {k: [] for k in GROUPS}
+    grouped["Other"] = []
+
+    for mod in modules:
+        placed = False
+        for group, keys in GROUPS.items():
+            if any(part in mod for part in keys):
+                grouped[group].append(mod)
+                placed = True
+                break
+        if not placed:
+            grouped["Other"].append(mod)
+
+    return grouped
+
+
+modules = collect_modules()
+grouped = group_modules(modules)
+
+with mkdocs_gen_files.open(API_INDEX, "w") as f:
+    f.write("# API Reference\n\n")
+    f.write("Auto-generated API documentation.\n\n")
+
+    for group, items in grouped.items():
+        if not items:
+            continue
+
+        f.write(f"## {group}\n\n")
+
+        for mod in items:
+            doc_path = f"api/{mod.replace('.', '/')}.md"
+
+            # write individual page
+            with mkdocs_gen_files.open(doc_path, "w") as mf:
+                mf.write(f"# {mod}\n\n")
+                mf.write(f"::: {mod}\n")
+
+            # link from index
+            f.write(f"### [{mod}]({mod.replace('.', '/')}.md)\n\n")
