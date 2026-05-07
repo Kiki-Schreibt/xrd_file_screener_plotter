@@ -108,9 +108,12 @@ This opens the main window for selecting XRD and optional PTH data, configuring 
 8. Plot the result and optionally send it to Origin.
 
 ## Filename Parsing
-The default filename parser expects filenames that contain information like gas, pressure, optional cycle number, step identifiers, and temperature. If your naming scheme differs, the GUI includes a token-based pattern builder for constructing a custom extraction pattern.
+The default filename parser expects filenames that contain information like gas, pressure, optional cycle number, step identifiers, and temperature. 
+If your naming scheme differs, the GUI includes a token-based pattern builder for constructing a custom extraction pattern.
 
-In practice, the code is built around filename conventions similar to the example data under `test_data/`. If your files follow a different naming scheme, some adjustment of the pattern will likely be necessary.
+In practice, the code is built around filename conventions similar to 
+ `REX245 XRK WAE-WA-049-01, 10dpm, IS 0.25deg, H2, 1bar C17_H2_001_07_0007_0030-0C`. If your files follow a different naming scheme, 
+some adjustment of the pattern will likely be necessary.
 
 ## Cached Data
 When raw XRD files are read, the categorized DataFrame can be stored as a pickle or CSV file and reloaded later. This is useful when a folder contains many scans and you do not want to rebuild the metadata table every time.
