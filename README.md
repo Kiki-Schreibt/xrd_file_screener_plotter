@@ -115,11 +115,6 @@ In practice, the code is built around filename conventions similar to the exampl
 ## Cached Data
 When raw XRD files are read, the categorized DataFrame can be stored as a pickle or CSV file and reloaded later. This is useful when a folder contains many scans and you do not want to rebuild the metadata table every time.
 
-Example cache files are already present in `test_data/`:
-
-- `categorized_data.pkl`
-- `categorized_data.csv`
-- `pth_files.pkl`
 
 ## Notes and Limitations
 - The codebase currently uses direct module imports inside `src/plotter`, so running `python src/plotter/gui.py` from the repository root is the intended entry point.
